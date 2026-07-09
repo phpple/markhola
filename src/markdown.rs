@@ -198,8 +198,8 @@ impl HighlightAssets {
     fn theme(&self) -> &Theme {
         self.theme_set
             .themes
-            .get("InspiredGitHub")
-            .or_else(|| self.theme_set.themes.get("Solarized (light)"))
+            .get("base16-ocean.dark")
+            .or_else(|| self.theme_set.themes.get("InspiredGitHub"))
             .or_else(|| self.theme_set.themes.values().next())
             .expect("syntect should provide at least one default theme")
     }

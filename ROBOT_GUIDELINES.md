@@ -49,3 +49,19 @@ Commit messages should:
 - be written in English
 - be a single sentence
 - summarize the change clearly and directly
+
+## 7. Follow the Standard Delivery Flow
+
+When implementing a new feature or a user-requested change in this repository, follow this workflow:
+
+1. Confirm the current development version before making changes.
+2. If the user directly requests a feature, record or update that feature in `PLAN.MD`.
+3. Implement the feature in the smallest complete scope that satisfies the request.
+4. Run the existing validation command for the affected code path.
+5. Generate the DMG package after the implementation is complete.
+6. Commit the work incrementally by feature with English one-sentence commit messages.
+
+For version tracking:
+
+- always keep the current development version aligned across implementation-related files
+- do not add feature work without making sure the target version is clear in the plan

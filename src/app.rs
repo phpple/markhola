@@ -521,18 +521,42 @@ fn app_shell_html() -> &'static str {
         padding: 22px;
       }
 
-      .editor {
-        width: 100%;
+      .editor-shell {
+        display: grid;
+        grid-template-columns: auto minmax(0, 1fr);
         height: 100%;
-        border: 1px solid rgba(92, 74, 52, 0.16);
         border-radius: 18px;
         background: rgba(255, 255, 255, 0.9);
+        border: 1px solid rgba(92, 74, 52, 0.16);
+        overflow: hidden;
+        box-shadow: inset 0 1px 3px rgba(92, 74, 52, 0.06);
+      }
+
+      .editor-line-numbers {
+        min-width: 56px;
+        padding: 18px 10px 18px 14px;
+        background: rgba(92, 74, 52, 0.06);
+        border-right: 1px solid rgba(92, 74, 52, 0.12);
+        color: rgba(111, 98, 88, 0.78);
+        font: 15px/1.68 var(--font-code);
+        text-align: right;
+        user-select: none;
+        overflow: hidden;
+      }
+
+      .editor-line-number {
+        display: block;
+      }
+
+      .editor {
+        width: 100%;
+        border: 0;
         color: var(--text);
         font: 15px/1.68 var(--font-code);
         padding: 18px 20px;
         resize: none;
         outline: none;
-        box-shadow: inset 0 1px 3px rgba(92, 74, 52, 0.06);
+        background: transparent;
       }
 
       .empty-state {
@@ -670,7 +694,7 @@ fn app_shell_html() -> &'static str {
         overflow: auto;
         padding: 16px;
         border-radius: 16px;
-        background: #211d19;
+        background: #666666;
         color: #f8f5ee;
       }
 
@@ -686,7 +710,7 @@ fn app_shell_html() -> &'static str {
         position: relative;
         margin: 1.2em 0;
         border-radius: 18px;
-        background: #211d19;
+        background: #666666;
         box-shadow: 0 12px 34px rgba(56, 41, 28, 0.16);
         overflow: hidden;
       }
@@ -698,7 +722,7 @@ fn app_shell_html() -> &'static str {
         z-index: 1;
         padding: 4px 10px;
         border-radius: 999px;
-        background: rgba(255, 255, 255, 0.12);
+        background: rgba(255, 255, 255, 0.18);
         color: rgba(248, 245, 238, 0.92);
         font: 11px/1.2 var(--font-ui);
         letter-spacing: 0.04em;
@@ -723,9 +747,9 @@ fn app_shell_html() -> &'static str {
         display: grid;
         align-content: start;
         padding: 18px 0 18px 14px;
-        background: rgba(255, 255, 255, 0.04);
-        border-right: 1px solid rgba(255, 255, 255, 0.08);
-        color: rgba(248, 245, 238, 0.42);
+        background: rgba(255, 255, 255, 0.1);
+        border-right: 1px solid rgba(255, 255, 255, 0.14);
+        color: rgba(248, 245, 238, 0.72);
         font: 13px/1.7 var(--font-code);
         user-select: none;
       }
@@ -922,7 +946,10 @@ fn app_shell_html() -> &'static str {
             <article class="markdown-body" id="content"></article>
           </div>
           <div class="editor-pane pane hidden" id="editorPane">
-            <textarea id="editor" class="editor" spellcheck="false" aria-label="Markdown editor"></textarea>
+            <div class="editor-shell" id="editorShell">
+              <div id="editorLineNumbers" class="editor-line-numbers" aria-hidden="true">1</div>
+              <textarea id="editor" class="editor" spellcheck="false" aria-label="Markdown editor"></textarea>
+            </div>
           </div>
         </div>
       </section>
@@ -1008,6 +1035,7 @@ fn app_shell_html() -> &'static str {
       const emptyState = document.getElementById("emptyState");
       const previewPane = document.getElementById("previewPane");
       const editorPane = document.getElementById("editorPane");
+      const editorLineNumbers = document.getElementById("editorLineNumbers");
       const editor = document.getElementById("editor");
       const content = document.getElementById("content");
       const documentBase = document.getElementById("document-base");
@@ -1035,6 +1063,86 @@ fn app_shell_html() -> &'static str {
         editor.value = `${value.slice(0, start)}\t${value.slice(end)}`;
         editor.selectionStart = editor.selectionEnd = start + 1;
         editor.dispatchEvent(new Event("input", { bubbles: true }));
+      };
+
+      const isWritableMode = () => !editorPane.classList.contains("hidden");
+
+      const selectAllEditorText = () => {
+        editor.focus();
+        editor.selectionStart = 0;
+        editor.selectionEnd = editor.value.length;
+        editor.setSelectionRange(0, editor.value.length);
+      };
+
+      const updateEditorLineNumbers = () => {
+        const totalLines = Math.max(1, editor.value.split("\n").length);
+        editorLineNumbers.innerHTML = Array.from(
+          { length: totalLines },
+          (_, index) => `<span class="editor-line-number">${index + 1}</span>`
+        ).join("");
+      };
+
+      const syncEditorScroll = () => {
+        editorLineNumbers.scrollTop = editor.scrollTop;
+      };
+
+      const moveCaretToLineBoundary = (boundary) => {
+        const cursor = editor.selectionStart;
+        const value = editor.value;
+        const lineStart = value.lastIndexOf("\n", Math.max(0, cursor - 1)) + 1;
+        const nextBreak = value.indexOf("\n", cursor);
+        const lineEnd = nextBreak === -1 ? value.length : nextBreak;
+        const target = boundary === "start" ? lineStart : lineEnd;
+        editor.focus();
+        editor.setSelectionRange(target, target);
+      };
+
+      const replaceEditorSelection = (text) => {
+        const start = editor.selectionStart;
+        const end = editor.selectionEnd;
+        editor.setRangeText(text, start, end, "end");
+        editor.dispatchEvent(new Event("input", { bubbles: true }));
+      };
+
+      const selectedEditorText = () => {
+        const start = editor.selectionStart;
+        const end = editor.selectionEnd;
+        return editor.value.slice(start, end);
+      };
+
+      const handleEditorClipboardShortcut = async (shortcut) => {
+        editor.focus();
+
+        try {
+          if (shortcut === "c") {
+            const selection = selectedEditorText();
+            if (selection) {
+              await navigator.clipboard.writeText(selection);
+            }
+            return;
+          }
+
+          if (shortcut === "x") {
+            const selection = selectedEditorText();
+            if (selection) {
+              await navigator.clipboard.writeText(selection);
+              replaceEditorSelection("");
+            }
+            return;
+          }
+
+          if (shortcut === "v") {
+            const clipboardText = await navigator.clipboard.readText();
+            replaceEditorSelection(clipboardText);
+          }
+        } catch {
+          if (document.activeElement !== editor) {
+            editor.focus();
+          }
+          document.execCommand(
+            shortcut === "c" ? "copy" : shortcut === "x" ? "cut" : "paste"
+          );
+        }
       };
 
       const showPaneForMode = (mode) => {
@@ -1082,8 +1190,11 @@ fn app_shell_html() -> &'static str {
       });
 
       editor.addEventListener("input", () => {
+        updateEditorLineNumbers();
         window.ipc.postMessage(JSON.stringify({ kind: "editor-changed", markdown: editor.value }));
       });
+
+      editor.addEventListener("scroll", syncEditorScroll);
 
       document.addEventListener("keydown", (event) => {
         if (event.key === "Escape" && !aboutOverlay.classList.contains("hidden")) {
@@ -1097,6 +1208,20 @@ fn app_shell_html() -> &'static str {
           return;
         }
 
+        if (event.target === editor && event.ctrlKey && !event.metaKey && !event.altKey) {
+          if (event.key.toLowerCase() === "a") {
+            event.preventDefault();
+            moveCaretToLineBoundary("start");
+            return;
+          }
+
+          if (event.key.toLowerCase() === "e") {
+            event.preventDefault();
+            moveCaretToLineBoundary("end");
+            return;
+          }
+        }
+
         if (!event.metaKey || event.ctrlKey || event.altKey) {
           return;
         }
@@ -1104,6 +1229,12 @@ fn app_shell_html() -> &'static str {
         if (event.key.toLowerCase() === "s") {
           event.preventDefault();
           window.ipc.postMessage(JSON.stringify({ kind: "request-save" }));
+        } else if (event.key.toLowerCase() === "a" && isWritableMode()) {
+          event.preventDefault();
+          selectAllEditorText();
+        } else if (["c", "v", "x"].includes(event.key.toLowerCase()) && isWritableMode()) {
+          event.preventDefault();
+          void handleEditorClipboardShortcut(event.key.toLowerCase());
         } else if (event.key === "/") {
           event.preventDefault();
           window.ipc.postMessage(JSON.stringify({ kind: "toggle-mode" }));
@@ -1144,6 +1275,8 @@ fn app_shell_html() -> &'static str {
         applyDocumentChrome(payload);
         content.innerHTML = payload.html;
         editor.value = payload.markdown;
+        updateEditorLineNumbers();
+        syncEditorScroll();
       };
 
       window.updateDocumentState = (payload) => {
@@ -1152,6 +1285,8 @@ fn app_shell_html() -> &'static str {
           content.innerHTML = payload.html;
         }
       };
+
+      updateEditorLineNumbers();
 
       window.showAbout = (payload) => {
         aboutVersion.textContent = payload.version;
