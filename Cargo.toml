@@ -1,0 +1,18 @@
+[package]
+name = "markhola"
+version = "0.5.0"
+edition = "2024"
+
+[dependencies]
+icns = { version = "=0.4.0", default-features = false, features = ["pngio"] }
+objc2 = "=0.6.4"
+objc2-app-kit = { version = "=0.3.2", features = ["NSApplication", "NSDocumentController", "NSEvent", "NSMenu", "NSMenuItem", "NSResponder"] }
+objc2-foundation = "=0.3.2"
+open = "=5.3.6"
+pulldown-cmark = { version = "=0.13.4", default-features = false, features = ["html"] }
+rfd = "=0.15.4"
+serde = { version = "=1.0.228", features = ["derive"] }
+serde_json = "=1.0.150"
+tao = "=0.34.8"
+url = "=2.5.8"
+wry = "=0.53.5"
