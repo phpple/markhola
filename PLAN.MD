@@ -20,6 +20,19 @@ This is another markdown reader and exporter software.Written by AI, free are th
    - You can edit the markdown file under this model.After you enter "Command + /", you can switch the model both for readonly and writeonly.
    - You can save the markdown file after edit it and enter the "Command + S"
 
+### v0.6.1
+1. Code Highlight Support
+  - Display line number at the left side
+  - Highlight the keyword by the type of the language
+  - Display the language on the right top corner while the mouse hover the code area
+2. Writable editor shortcut enhancement
+  - Support "Command + A" to select all text while in writable mode
+  - Support "Command + C", "Command + V", and "Command + X" for common text editing
+  - Support "Ctrl + A" to move caret to the start of the current line
+  - Support "Ctrl + E" to move caret to the end of the current line
+3. Writable editor line numbers
+  - Display line numbers at the left side while editing Markdown
+
 ### v0.7.0
 1. Support for Exporting PDF
 
