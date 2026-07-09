@@ -1,4 +1,6 @@
 mod app;
+mod document;
+mod file_io;
 mod markdown;
 
 fn main() {

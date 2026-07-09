@@ -1,18 +1,17 @@
-use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
-use rfd::FileDialog;
+use rfd::{FileDialog, MessageButtons, MessageDialog, MessageDialogResult, MessageLevel};
+use serde::Serialize;
+use serde_json::Value;
 use tao::dpi::LogicalSize;
 use tao::event::{ElementState, Event, StartCause, WindowEvent};
 use tao::event_loop::{ControlFlow, EventLoopBuilder, EventLoopProxy};
 use tao::keyboard::{KeyCode, ModifiersState};
-use tao::window::WindowBuilder;
-use serde::Serialize;
-use serde_json::Value;
-use url::Url;
+use tao::window::{Window, WindowBuilder};
 use wry::{WebView, WebViewBuilder};
 
-use crate::markdown;
+use crate::document::{ActiveDocument, DocumentSnapshot, DocumentMode};
+use crate::file_io;
 
 const WINDOW_TITLE: &str = "MarkHola";
 const APP_VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -26,26 +25,38 @@ enum UserEvent {
     OpenFile,
     OpenPath(PathBuf),
     OpenExternal(String),
+    SaveDocument,
+    ToggleMode,
+    EditorChanged(String),
     ShowAbout,
     Exit,
-    Render(Result<DocumentPayload, String>),
+}
+
+#[derive(Clone, Debug)]
+enum PendingChangesAction {
+    Save,
+    Discard,
+    Cancel,
 }
 
 #[derive(Clone, Debug, Serialize)]
-struct DocumentPayload {
-    file_name: String,
-    file_path: String,
-    title: String,
-    base_url: String,
-    word_count: usize,
-    line_count: usize,
-    html: String,
+struct StatusPayload<'a> {
+    message: &'a str,
+    level: &'a str,
+}
+
+#[derive(Clone, Debug, Serialize)]
+struct DocumentPresentation<'a> {
+    #[serde(flatten)]
+    document: &'a DocumentSnapshot,
+    status_message: &'a str,
 }
 
 pub fn run() -> Result<(), Box<dyn std::error::Error>> {
     let event_loop = EventLoopBuilder::<UserEvent>::with_user_event().build();
     let proxy = event_loop.create_proxy();
     let mut modifiers = ModifiersState::default();
+    let mut active_document: Option<ActiveDocument> = None;
 
     let window = WindowBuilder::new()
         .with_title(WINDOW_TITLE)
@@ -69,7 +80,7 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
 
         match event {
             Event::NewEvents(StartCause::Init) => {
-                render_info(&webview, "Ready. Open a Markdown file or press Command+O.");
+                render_status(&webview, "Ready. Open a Markdown file or press Command+O.", "info");
             }
             Event::Opened { urls } => {
                 if let Some(url) = urls.into_iter().find(|url| url.scheme() == "file") {
@@ -78,32 +89,42 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
                             let _ = proxy.send_event(UserEvent::OpenPath(path));
                         }
                         Err(_) => {
-                            render_error(&webview, "The requested file path is not valid.");
+                            render_status(&webview, "The requested file path is not valid.", "error");
                         }
                     }
                 }
             }
             Event::WindowEvent { event, .. } => match event {
                 WindowEvent::CloseRequested => {
-                    *control_flow = ControlFlow::Exit;
+                    if resolve_pending_changes(&window, &webview, &mut active_document) {
+                        *control_flow = ControlFlow::Exit;
+                    }
                 }
                 WindowEvent::ModifiersChanged(next_modifiers) => {
                     modifiers = next_modifiers;
                 }
                 WindowEvent::KeyboardInput { event, .. } => {
-                    if event.state == ElementState::Released
-                        && modifiers.super_key()
-                        && event.physical_key == KeyCode::KeyO
-                    {
-                        let _ = proxy.send_event(UserEvent::OpenFile);
+                    if event.state == ElementState::Released && modifiers.super_key() {
+                        match event.physical_key {
+                            KeyCode::KeyO => {
+                                let _ = proxy.send_event(UserEvent::OpenFile);
+                            }
+                            KeyCode::KeyS => {
+                                let _ = proxy.send_event(UserEvent::SaveDocument);
+                            }
+                            KeyCode::Slash => {
+                                let _ = proxy.send_event(UserEvent::ToggleMode);
+                            }
+                            _ => {}
+                        }
                     }
                 }
                 WindowEvent::HoveredFile(path) => {
                     let message = format!("Drop to open: {}", path.display());
-                    render_info(&webview, &message);
+                    render_status(&webview, &message, "info");
                 }
                 WindowEvent::HoveredFileCancelled => {
-                    render_info(&webview, "Ready. Open a Markdown file or press Command+O.");
+                    render_status(&webview, "Ready. Open a Markdown file or press Command+O.", "info");
                 }
                 WindowEvent::DroppedFile(path) => {
                     let _ = proxy.send_event(UserEvent::OpenPath(path));
@@ -111,58 +132,64 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
                 _ => {}
             },
             Event::UserEvent(UserEvent::OpenFile) => {
+                if !resolve_pending_changes(&window, &webview, &mut active_document) {
+                    return;
+                }
+
                 match open_document_dialog() {
-                    OpenDialogResult::Selected(document) => {
-                        let _ = proxy.send_event(UserEvent::Render(Ok(document)));
-                    }
-                    OpenDialogResult::Cancelled => {
-                        render_info(&webview, "Open cancelled.");
-                    }
-                    OpenDialogResult::Failed(message) => {
-                        let _ = proxy.send_event(UserEvent::Render(Err(message)));
-                    }
+                    Some(path) => open_document(&window, &webview, &mut active_document, &path),
+                    None => render_status(&webview, "Open cancelled.", "info"),
                 }
             }
             Event::UserEvent(UserEvent::OpenPath(path)) => {
-                render_info(&webview, "Loading preview...");
-                let _ = proxy.send_event(UserEvent::Render(load_document(&path)));
+                if !resolve_pending_changes(&window, &webview, &mut active_document) {
+                    return;
+                }
+
+                open_document(&window, &webview, &mut active_document, &path);
             }
             Event::UserEvent(UserEvent::OpenExternal(href)) => {
                 if let Err(error) = open::that(href) {
-                    render_error(&webview, &format!("Failed to open link: {error}"));
+                    render_status(&webview, &format!("Failed to open link: {error}"), "error");
+                }
+            }
+            Event::UserEvent(UserEvent::SaveDocument) => {
+                save_active_document(&window, &webview, &mut active_document);
+            }
+            Event::UserEvent(UserEvent::ToggleMode) => {
+                if let Some(document) = active_document.as_mut() {
+                    document.toggle_mode();
+                    let status = match document.mode() {
+                        DocumentMode::Readonly => "Readonly preview updated.",
+                        DocumentMode::Writable => "Writable mode enabled.",
+                    };
+                    present_document(&window, &webview, document, status, true);
+                } else {
+                    render_status(&webview, "No document opened.", "error");
+                }
+            }
+            Event::UserEvent(UserEvent::EditorChanged(markdown)) => {
+                if let Some(document) = active_document.as_mut() {
+                    document.update_markdown(markdown);
+                    sync_document_state(&window, &webview, document, "Unsaved changes.");
                 }
             }
             Event::UserEvent(UserEvent::ShowAbout) => {
                 render_about(&webview);
             }
             Event::UserEvent(UserEvent::Exit) => {
-                *control_flow = ControlFlow::Exit;
+                if resolve_pending_changes(&window, &webview, &mut active_document) {
+                    *control_flow = ControlFlow::Exit;
+                } else {
+                    return;
+                }
             }
-            Event::UserEvent(UserEvent::Render(result)) => match result {
-                Ok(document) => {
-                    if let Err(error) = render_document(&webview, &document) {
-                        render_error(&webview, &format!("Failed to render document: {error}"));
-                    } else {
-                        let title = format!("{} - {}", document.title, WINDOW_TITLE);
-                        window.set_title(&title);
-                    }
-                }
-                Err(message) => {
-                    render_error(&webview, &message);
-                }
-            },
             _ => {}
         }
     });
 
     #[allow(unreachable_code)]
     Ok(())
-}
-
-enum OpenDialogResult {
-    Selected(DocumentPayload),
-    Cancelled,
-    Failed(String),
 }
 
 fn handle_ipc_message(proxy: &EventLoopProxy<UserEvent>, payload: String) {
@@ -179,108 +206,187 @@ fn handle_ipc_message(proxy: &EventLoopProxy<UserEvent>, payload: String) {
                 let _ = proxy.send_event(UserEvent::OpenExternal(href.to_string()));
             }
         }
+        Some("toggle-mode") => {
+            let _ = proxy.send_event(UserEvent::ToggleMode);
+        }
+        Some("request-save") => {
+            let _ = proxy.send_event(UserEvent::SaveDocument);
+        }
+        Some("editor-changed") => {
+            if let Some(markdown) = value.get("markdown").and_then(Value::as_str) {
+                let _ = proxy.send_event(UserEvent::EditorChanged(markdown.to_string()));
+            }
+        }
         _ => {}
     }
 }
 
-fn open_document_dialog() -> OpenDialogResult {
-    let Some(path) = FileDialog::new()
+fn open_document_dialog() -> Option<PathBuf> {
+    FileDialog::new()
         .add_filter("Markdown", &["md", "markdown"])
         .set_title("Open Markdown File")
         .pick_file()
-    else {
-        return OpenDialogResult::Cancelled;
+}
+
+fn open_document(
+    window: &Window,
+    webview: &WebView,
+    active_document: &mut Option<ActiveDocument>,
+    path: &PathBuf,
+) {
+    render_status(webview, "Loading document...", "info");
+
+    match load_document(path) {
+        Ok(document) => {
+            *active_document = Some(document);
+            if let Some(document) = active_document.as_ref() {
+                present_document(window, webview, document, "Document loaded.", true);
+            }
+        }
+        Err(message) => {
+            render_status(webview, &message, "error");
+        }
+    }
+}
+
+fn load_document(path: &PathBuf) -> Result<ActiveDocument, String> {
+    let markdown = file_io::load_markdown(path)?;
+    let base_url = file_io::directory_base_url(path)?;
+    Ok(ActiveDocument::open(path.clone(), markdown, base_url))
+}
+
+fn save_active_document(window: &Window, webview: &WebView, active_document: &mut Option<ActiveDocument>) -> bool {
+    let Some(document) = active_document.as_mut() else {
+        render_status(webview, "No document to save.", "error");
+        return false;
     };
 
-    match load_document(&path) {
-        Ok(document) => OpenDialogResult::Selected(document),
-        Err(message) => OpenDialogResult::Failed(message),
+    if let Err(message) = file_io::save_markdown(document.file_path(), document.markdown()) {
+        render_status(webview, &message, "error");
+        return false;
+    }
+
+    document.mark_saved();
+    sync_document_state(window, webview, document, "Saved.");
+    true
+}
+
+fn resolve_pending_changes(
+    window: &Window,
+    webview: &WebView,
+    active_document: &mut Option<ActiveDocument>,
+) -> bool {
+    let Some(document) = active_document.as_mut() else {
+        return true;
+    };
+
+    if !document.is_dirty() {
+        return true;
+    }
+
+    match ask_pending_changes_action(window, document.file_name()) {
+        PendingChangesAction::Save => save_active_document(window, webview, active_document),
+        PendingChangesAction::Discard => true,
+        PendingChangesAction::Cancel => {
+            render_status(webview, "Action cancelled.", "info");
+            false
+        }
     }
 }
 
-fn load_document(path: &Path) -> Result<DocumentPayload, String> {
-    ensure_supported_markdown_path(path)?;
-    let markdown_text =
-        fs::read_to_string(path).map_err(|error| format!("Failed to read file: {error}"))?;
-    let title = markdown::extract_title(&markdown_text)
-        .unwrap_or_else(|| file_name(path).unwrap_or_else(|| "Untitled".to_string()));
-    let html = markdown::render_html(&markdown_text);
-    let base_url = directory_base_url(path)
-        .map_err(|error| format!("Failed to resolve document directory: {error}"))?;
-    let line_count = markdown_text.lines().count();
-    let word_count = markdown_text.split_whitespace().count();
+fn ask_pending_changes_action(window: &Window, file_name: &str) -> PendingChangesAction {
+    let result = MessageDialog::new()
+        .set_parent(window)
+        .set_level(MessageLevel::Warning)
+        .set_title("Unsaved changes")
+        .set_description(format!("Save changes to {file_name} before continuing?"))
+        .set_buttons(MessageButtons::YesNoCancelCustom(
+            "Save".to_string(),
+            "Discard".to_string(),
+            "Cancel".to_string(),
+        ))
+        .show();
 
-    Ok(DocumentPayload {
-        file_name: file_name(path).unwrap_or_else(|| "Untitled".to_string()),
-        file_path: path.display().to_string(),
-        title,
-        base_url,
-        word_count,
-        line_count,
-        html,
-    })
-}
-
-fn file_name(path: &Path) -> Option<String> {
-    path.file_name()
-        .and_then(|value| value.to_str())
-        .map(ToOwned::to_owned)
-}
-
-fn ensure_supported_markdown_path(path: &Path) -> Result<(), String> {
-    if !path.exists() {
-        return Err(format!("File not found: {}", path.display()));
-    }
-
-    let extension = path
-        .extension()
-        .and_then(|value| value.to_str())
-        .map(|value| value.to_ascii_lowercase());
-
-    match extension.as_deref() {
-        Some("md") | Some("markdown") => Ok(()),
-        _ => Err("Only .md and .markdown files are supported in v0.5.0.".to_string()),
+    match result {
+        MessageDialogResult::Custom(choice) if choice == "Save" => PendingChangesAction::Save,
+        MessageDialogResult::Custom(choice) if choice == "Discard" => PendingChangesAction::Discard,
+        _ => PendingChangesAction::Cancel,
     }
 }
 
-fn directory_base_url(path: &Path) -> Result<String, &'static str> {
-    let directory = path
-        .parent()
-        .ok_or("Document path does not have a parent directory.")?;
-    let url = Url::from_directory_path(directory)
-        .map_err(|_| "Document directory cannot be converted to a file URL.")?;
-    Ok(url.to_string())
+fn present_document(window: &Window, webview: &WebView, document: &ActiveDocument, status: &str, full_render: bool) {
+    update_window_title(window, Some(document));
+
+    if full_render {
+        render_document(webview, document, status);
+    } else {
+        sync_document_state(window, webview, document, status);
+    }
 }
 
-fn render_document(webview: &WebView, document: &DocumentPayload) -> Result<(), String> {
-    let payload = serde_json::to_string(document)
-        .map_err(|error| format!("Failed to serialize document payload: {error}"))?;
-    let script = format!("window.renderDocument({payload});");
-    webview
-        .evaluate_script(&script)
-        .map_err(|error| format!("WebView script error: {error}"))
+fn update_window_title(window: &Window, document: Option<&ActiveDocument>) {
+    let title = document
+        .map(ActiveDocument::window_title)
+        .unwrap_or_else(|| WINDOW_TITLE.to_string());
+    window.set_title(&title);
 }
 
-fn render_error(webview: &WebView, message: &str) {
-    let script = format!(
-        "window.renderError({});",
-        serde_json::to_string(message).unwrap_or_else(|_| "\"Unexpected error.\"".to_string())
-    );
-    let _ = webview.evaluate_script(&script);
+fn render_document(webview: &WebView, document: &ActiveDocument, status: &str) {
+    let snapshot = document.snapshot();
+    let payload = DocumentPresentation {
+        document: &snapshot,
+        status_message: status,
+    };
+    let serialized = match serde_json::to_string(&payload) {
+        Ok(serialized) => serialized,
+        Err(error) => {
+            render_status(webview, &format!("Failed to serialize document: {error}"), "error");
+            return;
+        }
+    };
+
+    let script = format!("window.renderDocument({serialized});");
+    if let Err(error) = webview.evaluate_script(&script) {
+        render_status(webview, &format!("WebView script error: {error}"), "error");
+    }
 }
 
-fn render_info(webview: &WebView, message: &str) {
-    let script = format!(
-        "window.renderInfo({});",
-        serde_json::to_string(message).unwrap_or_else(|_| "\"Ready.\"".to_string())
-    );
+fn sync_document_state(window: &Window, webview: &WebView, document: &ActiveDocument, status: &str) {
+    update_window_title(window, Some(document));
+
+    let snapshot = document.snapshot();
+    let payload = DocumentPresentation {
+        document: &snapshot,
+        status_message: status,
+    };
+    let serialized = match serde_json::to_string(&payload) {
+        Ok(serialized) => serialized,
+        Err(error) => {
+            render_status(webview, &format!("Failed to serialize document: {error}"), "error");
+            return;
+        }
+    };
+
+    let script = format!("window.updateDocumentState({serialized});");
+    if let Err(error) = webview.evaluate_script(&script) {
+        render_status(webview, &format!("WebView script error: {error}"), "error");
+    }
+}
+
+fn render_status(webview: &WebView, message: &str, level: &str) {
+    let payload = StatusPayload { message, level };
+    let serialized = match serde_json::to_string(&payload) {
+        Ok(serialized) => serialized,
+        Err(_) => return,
+    };
+    let script = format!("window.showStatus({serialized});");
     let _ = webview.evaluate_script(&script);
 }
 
 fn render_about(webview: &WebView) {
     let script = format!(
         "window.showAbout({{version:{}, author:{}, githubUrl:{}, buildTarget:{}, buildPlatform:{}}});",
-        serde_json::to_string(APP_VERSION).unwrap_or_else(|_| "\"0.5.0\"".to_string()),
+        serde_json::to_string(APP_VERSION).unwrap_or_else(|_| "\"0.6.0\"".to_string()),
         serde_json::to_string(APP_AUTHOR).unwrap_or_else(|_| "\"Ronnie Deng\"".to_string()),
         serde_json::to_string(APP_GITHUB_URL)
             .unwrap_or_else(|_| "\"https://github.com/phpple/markhola\"".to_string()),
@@ -309,6 +415,8 @@ fn app_shell_html() -> &'static str {
         --muted: #6f6258;
         --accent: #0f766e;
         --accent-strong: #115e59;
+        --warn: #b45309;
+        --danger: #b91c1c;
         --shadow: 0 24px 60px rgba(69, 48, 29, 0.12);
         --font-ui: "SF Pro Display", "Helvetica Neue", sans-serif;
         --font-body: "Charter", "Iowan Old Style", Georgia, serif;
@@ -380,9 +488,51 @@ fn app_shell_html() -> &'static str {
         text-overflow: ellipsis;
       }
 
+      .status {
+        color: var(--muted);
+        font-size: 12px;
+        font-weight: 600;
+        text-align: right;
+      }
+
+      .status[data-level="warning"] {
+        color: var(--warn);
+      }
+
+      .status[data-level="error"] {
+        color: var(--danger);
+      }
+
+      .workspace {
+        min-height: 0;
+      }
+
+      .pane {
+        height: 100%;
+      }
+
       .preview {
         overflow: auto;
         padding: 24px;
+      }
+
+      .editor-pane {
+        min-height: 100%;
+        padding: 22px;
+      }
+
+      .editor {
+        width: 100%;
+        height: 100%;
+        border: 1px solid rgba(92, 74, 52, 0.16);
+        border-radius: 18px;
+        background: rgba(255, 255, 255, 0.9);
+        color: var(--text);
+        font: 15px/1.68 var(--font-code);
+        padding: 18px 20px;
+        resize: none;
+        outline: none;
+        box-shadow: inset 0 1px 3px rgba(92, 74, 52, 0.06);
       }
 
       .empty-state {
@@ -408,7 +558,7 @@ fn app_shell_html() -> &'static str {
 
       .bottom-bar {
         display: grid;
-        grid-template-columns: minmax(0, 1fr) auto auto auto;
+        grid-template-columns: minmax(0, 1fr) auto auto auto auto;
         gap: 16px;
         align-items: center;
         padding: 12px 16px;
@@ -678,16 +828,21 @@ fn app_shell_html() -> &'static str {
             <strong id="documentTitle">Preview</strong>
             <span id="documentSubtitle">Use File > Open, Command+O, or drag a Markdown file into the window.</span>
           </div>
-          <span id="status" class="status">Ready.</span>
+          <span id="status" class="status" data-level="info">Ready.</span>
         </div>
-        <div class="preview" id="preview">
-          <div class="empty-state" id="emptyState">
+        <div class="workspace">
+          <div class="empty-state pane" id="emptyState">
             <div class="empty-card">
               <h2>No document opened</h2>
-              <p>Open, drag, or drop a Markdown file to preview headings, links, images, and tables.</p>
+              <p>Open, drag, or drop a Markdown file to preview or edit the current Markdown source.</p>
             </div>
           </div>
-          <article class="markdown-body hidden" id="content"></article>
+          <div class="preview pane hidden" id="previewPane">
+            <article class="markdown-body" id="content"></article>
+          </div>
+          <div class="editor-pane pane hidden" id="editorPane">
+            <textarea id="editor" class="editor" spellcheck="false" aria-label="Markdown editor"></textarea>
+          </div>
         </div>
       </section>
 
@@ -695,7 +850,8 @@ fn app_shell_html() -> &'static str {
         <div class="bottom-item" id="filePath">Path: No file opened</div>
         <div class="bottom-item" id="wordCount"><strong>Words</strong> 0</div>
         <div class="bottom-item" id="lineCount"><strong>Lines</strong> 0</div>
-        <div class="bottom-item" id="bottomStatus"><strong>Status</strong> Ready.</div>
+        <div class="bottom-item" id="modeState"><strong>Mode</strong> Readonly</div>
+        <div class="bottom-item" id="saveState"><strong>Status</strong> Ready.</div>
       </footer>
     </div>
 
@@ -735,13 +891,13 @@ fn app_shell_html() -> &'static str {
           </svg>
           <div class="about-product">
             <h3>MarkHola</h3>
-            <p>Markdown reader and exporter</p>
+            <p>Markdown reader and editor</p>
           </div>
         </div>
         <div class="about-meta">
           <div class="about-meta-row">
             <strong>Version</strong>
-            <span class="about-value" id="aboutVersion">0.5.0</span>
+            <span class="about-value" id="aboutVersion">0.6.0</span>
             <span></span>
           </div>
           <div class="about-meta-row">
@@ -760,21 +916,25 @@ fn app_shell_html() -> &'static str {
             <button class="about-copy" id="aboutCopy" type="button">Copy</button>
           </div>
         </div>
-        <div class="about-footer">Built for local Markdown reading on Apple Silicon.</div>
+        <div class="about-footer">Built for local Markdown reading and writing on Apple Silicon.</div>
       </div>
     </div>
 
     <script>
       const status = document.getElementById("status");
-      const bottomStatus = document.getElementById("bottomStatus");
       const documentTitle = document.getElementById("documentTitle");
       const documentSubtitle = document.getElementById("documentSubtitle");
       const emptyState = document.getElementById("emptyState");
+      const previewPane = document.getElementById("previewPane");
+      const editorPane = document.getElementById("editorPane");
+      const editor = document.getElementById("editor");
       const content = document.getElementById("content");
       const documentBase = document.getElementById("document-base");
       const filePath = document.getElementById("filePath");
       const wordCount = document.getElementById("wordCount");
       const lineCount = document.getElementById("lineCount");
+      const modeState = document.getElementById("modeState");
+      const saveState = document.getElementById("saveState");
       const aboutOverlay = document.getElementById("aboutOverlay");
       const aboutClose = document.getElementById("aboutClose");
       const aboutVersion = document.getElementById("aboutVersion");
@@ -785,6 +945,36 @@ fn app_shell_html() -> &'static str {
 
       const hideAbout = () => {
         aboutOverlay.classList.add("hidden");
+      };
+
+      const insertTab = () => {
+        const start = editor.selectionStart;
+        const end = editor.selectionEnd;
+        const value = editor.value;
+        editor.value = `${value.slice(0, start)}\t${value.slice(end)}`;
+        editor.selectionStart = editor.selectionEnd = start + 1;
+        editor.dispatchEvent(new Event("input", { bubbles: true }));
+      };
+
+      const showPaneForMode = (mode) => {
+        const hasDocument = mode === "readonly" || mode === "writable";
+        emptyState.classList.toggle("hidden", hasDocument);
+        previewPane.classList.toggle("hidden", mode !== "readonly");
+        editorPane.classList.toggle("hidden", mode !== "writable");
+      };
+
+      const applyDocumentChrome = (payload) => {
+        document.title = `${payload.file_name}${payload.dirty ? " *" : ""} - MarkHola`;
+        documentTitle.textContent = payload.title;
+        documentSubtitle.textContent = payload.file_name;
+        filePath.textContent = `Path: ${payload.file_path}`;
+        wordCount.innerHTML = `<strong>Words</strong> ${payload.word_count}`;
+        lineCount.innerHTML = `<strong>Lines</strong> ${payload.line_count}`;
+        modeState.innerHTML = `<strong>Mode</strong> ${payload.mode_label}`;
+        saveState.innerHTML = `<strong>Status</strong> ${payload.save_status}`;
+        documentBase.setAttribute("href", payload.base_url);
+        showPaneForMode(payload.mode);
+        window.showStatus({ message: payload.status_message, level: payload.dirty ? "warning" : "info" });
       };
 
       aboutClose.addEventListener("click", hideAbout);
@@ -810,9 +1000,32 @@ fn app_shell_html() -> &'static str {
         }
       });
 
+      editor.addEventListener("input", () => {
+        window.ipc.postMessage(JSON.stringify({ kind: "editor-changed", markdown: editor.value }));
+      });
+
       document.addEventListener("keydown", (event) => {
         if (event.key === "Escape" && !aboutOverlay.classList.contains("hidden")) {
           hideAbout();
+          return;
+        }
+
+        if (event.target === editor && event.key === "Tab" && !event.metaKey && !event.ctrlKey) {
+          event.preventDefault();
+          insertTab();
+          return;
+        }
+
+        if (!event.metaKey || event.ctrlKey || event.altKey) {
+          return;
+        }
+
+        if (event.key.toLowerCase() === "s") {
+          event.preventDefault();
+          window.ipc.postMessage(JSON.stringify({ kind: "request-save" }));
+        } else if (event.key === "/") {
+          event.preventDefault();
+          window.ipc.postMessage(JSON.stringify({ kind: "toggle-mode" }));
         }
       });
 
@@ -841,37 +1054,22 @@ fn app_shell_html() -> &'static str {
         true
       );
 
-      window.renderInfo = (message) => {
-        status.textContent = message;
-        bottomStatus.innerHTML = `<strong>Status</strong> ${message}`;
-      };
-
-      window.renderError = (message) => {
-        status.textContent = message;
-        bottomStatus.innerHTML = `<strong>Status</strong> ${message}`;
-        documentTitle.textContent = "Preview";
-        documentSubtitle.textContent = "Use File > Open, Command+O, or drag a Markdown file into the window.";
-        filePath.textContent = "Path: No file opened";
-        wordCount.innerHTML = "<strong>Words</strong> 0";
-        lineCount.innerHTML = "<strong>Lines</strong> 0";
-        emptyState.classList.remove("hidden");
-        content.classList.add("hidden");
-        content.innerHTML = "";
+      window.showStatus = (payload) => {
+        status.textContent = payload.message;
+        status.dataset.level = payload.level || "info";
       };
 
       window.renderDocument = (payload) => {
-        document.title = `${payload.title} - MarkHola`;
-        documentTitle.textContent = payload.title;
-        documentSubtitle.textContent = payload.file_name;
-        filePath.textContent = `Path: ${payload.file_path}`;
-        wordCount.innerHTML = `<strong>Words</strong> ${payload.word_count}`;
-        lineCount.innerHTML = `<strong>Lines</strong> ${payload.line_count}`;
-        status.textContent = "Preview loaded.";
-        bottomStatus.innerHTML = "<strong>Status</strong> Preview loaded.";
-        documentBase.setAttribute("href", payload.base_url);
+        applyDocumentChrome(payload);
         content.innerHTML = payload.html;
-        content.classList.remove("hidden");
-        emptyState.classList.add("hidden");
+        editor.value = payload.markdown;
+      };
+
+      window.updateDocumentState = (payload) => {
+        applyDocumentChrome(payload);
+        if (payload.mode === "readonly") {
+          content.innerHTML = payload.html;
+        }
       };
 
       window.showAbout = (payload) => {
@@ -889,47 +1087,6 @@ fn app_shell_html() -> &'static str {
 "##
 }
 
-#[cfg(test)]
-mod tests {
-    use std::fs;
-    use std::time::{SystemTime, UNIX_EPOCH};
-
-    use super::ensure_supported_markdown_path;
-
-    #[test]
-    fn accepts_markdown_extensions() {
-        let stamp = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let temp_dir = std::env::temp_dir();
-
-        let md_path = temp_dir.join(format!("markhola-{stamp}.md"));
-        fs::write(&md_path, "# hello").unwrap();
-        assert!(ensure_supported_markdown_path(&md_path).is_ok());
-        let _ = fs::remove_file(&md_path);
-
-        let markdown_path = temp_dir.join(format!("markhola-{stamp}.markdown"));
-        fs::write(&markdown_path, "# hello").unwrap();
-        assert!(ensure_supported_markdown_path(&markdown_path).is_ok());
-        let _ = fs::remove_file(&markdown_path);
-    }
-
-    #[test]
-    fn rejects_non_markdown_extensions() {
-        let stamp = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let temp_path = std::env::temp_dir().join(format!("markhola-{stamp}.txt"));
-        fs::write(&temp_path, "hello").unwrap();
-
-        let error = ensure_supported_markdown_path(&temp_path).unwrap_err();
-        assert!(error.contains("Only .md and .markdown files are supported"));
-        let _ = fs::remove_file(&temp_path);
-    }
-}
-
 #[cfg(target_os = "macos")]
 mod macos_menu {
     use std::error::Error;
@@ -937,13 +1094,11 @@ mod macos_menu {
     use objc2::rc::Retained;
     use objc2::runtime::AnyObject;
     use objc2::{DefinedClass, MainThreadOnly, define_class, sel};
-    use objc2_app_kit::{
-        NSApp, NSApplication, NSEventModifierFlags, NSMenu, NSMenuItem,
-    };
+    use objc2_app_kit::{NSApp, NSApplication, NSEventModifierFlags, NSMenu, NSMenuItem};
     use objc2_foundation::{MainThreadMarker, NSObject, NSObjectProtocol, ns_string};
+    use tao::event_loop::EventLoopProxy;
 
     use super::UserEvent;
-    use tao::event_loop::EventLoopProxy;
 
     #[derive(Debug)]
     struct MenuTargetIvars {
@@ -964,6 +1119,16 @@ mod macos_menu {
                 let _ = self.ivars().proxy.send_event(UserEvent::OpenFile);
             }
 
+            #[unsafe(method(saveMenuDocument:))]
+            fn save_menu_document(&self, _sender: Option<&AnyObject>) {
+                let _ = self.ivars().proxy.send_event(UserEvent::SaveDocument);
+            }
+
+            #[unsafe(method(toggleDocumentMode:))]
+            fn toggle_document_mode(&self, _sender: Option<&AnyObject>) {
+                let _ = self.ivars().proxy.send_event(UserEvent::ToggleMode);
+            }
+
             #[unsafe(method(showAboutPanel:))]
             fn show_about_panel(&self, _sender: Option<&AnyObject>) {
                 let _ = self.ivars().proxy.send_event(UserEvent::ShowAbout);
@@ -977,10 +1142,7 @@ mod macos_menu {
     );
 
     impl MenuTarget {
-        fn new(
-            mtm: MainThreadMarker,
-            proxy: EventLoopProxy<UserEvent>,
-        ) -> Retained<Self> {
+        fn new(mtm: MainThreadMarker, proxy: EventLoopProxy<UserEvent>) -> Retained<Self> {
             let this = Self::alloc(mtm).set_ivars(MenuTargetIvars { proxy });
             unsafe { objc2::msg_send![super(this), init] }
         }
@@ -1050,6 +1212,31 @@ mod macos_menu {
         unsafe { open_item.setTarget(Some((&*target).as_ref())) };
         open_item.setKeyEquivalentModifierMask(NSEventModifierFlags::Command);
         file_menu.addItem(&open_item);
+
+        let save_item = unsafe {
+            NSMenuItem::initWithTitle_action_keyEquivalent(
+                NSMenuItem::alloc(mtm),
+                ns_string!("Save"),
+                Some(sel!(saveMenuDocument:)),
+                ns_string!("s"),
+            )
+        };
+        unsafe { save_item.setTarget(Some((&*target).as_ref())) };
+        save_item.setKeyEquivalentModifierMask(NSEventModifierFlags::Command);
+        file_menu.addItem(&save_item);
+
+        let toggle_item = unsafe {
+            NSMenuItem::initWithTitle_action_keyEquivalent(
+                NSMenuItem::alloc(mtm),
+                ns_string!("Toggle Mode"),
+                Some(sel!(toggleDocumentMode:)),
+                ns_string!("/"),
+            )
+        };
+        unsafe { toggle_item.setTarget(Some((&*target).as_ref())) };
+        toggle_item.setKeyEquivalentModifierMask(NSEventModifierFlags::Command);
+        file_menu.addItem(&toggle_item);
+
         file_menu.addItem(&NSMenuItem::separatorItem(mtm));
         let exit_item = unsafe {
             NSMenuItem::initWithTitle_action_keyEquivalent(
