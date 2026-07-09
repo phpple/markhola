@@ -28,8 +28,12 @@ This is another markdown reader and exporter software.Written by AI, free are th
 2. Writable editor shortcut enhancement
   - Support "Command + A" to select all text while in writable mode
   - Support "Command + C", "Command + V", and "Command + X" for common text editing
+  - Support "Command + Z" to undo the previous editor action
+  - Support "Command + R" to redo the next editor action
   - Support "Ctrl + A" to move caret to the start of the current line
   - Support "Ctrl + E" to move caret to the end of the current line
+  - Support "Tab" to insert 4 spaces and indent selected multiple lines
+  - Support "Shift + Tab" to remove 4 spaces and outdent selected multiple lines
 3. Writable editor line numbers
   - Display line numbers at the left side while editing Markdown
 

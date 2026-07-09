@@ -713,6 +713,8 @@ fn app_shell_html() -> &'static str {
         background: #666666;
         box-shadow: 0 12px 34px rgba(56, 41, 28, 0.16);
         overflow: hidden;
+        --code-line-height: 1.65;
+        --code-font-size: 14px;
       }
 
       .markdown-body .code-block__badge {
@@ -750,7 +752,7 @@ fn app_shell_html() -> &'static str {
         background: rgba(255, 255, 255, 0.1);
         border-right: 1px solid rgba(255, 255, 255, 0.14);
         color: rgba(248, 245, 238, 0.72);
-        font: 13px/1.7 var(--font-code);
+        font: var(--code-font-size)/var(--code-line-height) var(--font-code);
         user-select: none;
       }
 
@@ -768,15 +770,18 @@ fn app_shell_html() -> &'static str {
         padding: 18px 18px 18px 16px;
         border-radius: 0;
         background: transparent;
+        font: var(--code-font-size)/var(--code-line-height) var(--font-code);
       }
 
       .markdown-body .code-block__code {
         white-space: pre;
+        font: inherit;
+        line-height: inherit;
       }
 
       .markdown-body .code-block__line {
         display: block;
-        min-height: 1.7em;
+        line-height: var(--code-line-height);
       }
 
       .markdown-body blockquote {
@@ -1056,12 +1061,12 @@ fn app_shell_html() -> &'static str {
         aboutOverlay.classList.add("hidden");
       };
 
-      const insertTab = () => {
+      const EDITOR_INDENT = "    ";
+
+      const insertIndent = () => {
         const start = editor.selectionStart;
         const end = editor.selectionEnd;
-        const value = editor.value;
-        editor.value = `${value.slice(0, start)}\t${value.slice(end)}`;
-        editor.selectionStart = editor.selectionEnd = start + 1;
+        editor.setRangeText(EDITOR_INDENT, start, end, "end");
         editor.dispatchEvent(new Event("input", { bubbles: true }));
       };
 
@@ -1097,52 +1102,75 @@ fn app_shell_html() -> &'static str {
         editor.setSelectionRange(target, target);
       };
 
-      const replaceEditorSelection = (text) => {
+      const lineRangeForSelection = () => {
+        const value = editor.value;
         const start = editor.selectionStart;
         const end = editor.selectionEnd;
-        editor.setRangeText(text, start, end, "end");
+        const effectiveEnd = end > start && value[end - 1] === "\n" ? end - 1 : end;
+        const blockStart = value.lastIndexOf("\n", Math.max(0, start - 1)) + 1;
+        let blockEnd = effectiveEnd;
+
+        while (blockEnd < value.length && value[blockEnd] !== "\n") {
+          blockEnd += 1;
+        }
+
+        return { start, end, blockStart, blockEnd };
+      };
+
+      const indentSelectedLines = () => {
+        const { start, end, blockStart, blockEnd } = lineRangeForSelection();
+        const value = editor.value;
+        const block = value.slice(blockStart, blockEnd);
+
+        if (start === end && !block.includes("\n")) {
+          insertIndent();
+          return;
+        }
+
+        const lines = block.split("\n");
+        const indented = lines.map((line) => `${EDITOR_INDENT}${line}`).join("\n");
+        editor.setRangeText(indented, blockStart, blockEnd, "preserve");
+
+        const nextStart = start + EDITOR_INDENT.length;
+        const nextEnd = end + EDITOR_INDENT.length * lines.length;
+        editor.setSelectionRange(nextStart, nextEnd);
         editor.dispatchEvent(new Event("input", { bubbles: true }));
       };
 
-      const selectedEditorText = () => {
-        const start = editor.selectionStart;
-        const end = editor.selectionEnd;
-        return editor.value.slice(start, end);
+      const outdentSelectedLines = () => {
+        const { start, end, blockStart, blockEnd } = lineRangeForSelection();
+        const value = editor.value;
+        const block = value.slice(blockStart, blockEnd);
+        const lines = block.split("\n");
+        const removedPerLine = lines.map((line) => {
+          const match = line.match(/^ {1,4}/);
+          return match ? match[0].length : 0;
+        });
+
+        if (removedPerLine.every((count) => count === 0)) {
+          return;
+        }
+
+        const outdented = lines
+          .map((line, index) => line.slice(removedPerLine[index]))
+          .join("\n");
+
+        editor.setRangeText(outdented, blockStart, blockEnd, "preserve");
+
+        const firstLineRemoved = removedPerLine[0];
+        const removedBeforeSelectionEnd = removedPerLine.reduce(
+          (total, count) => total + count,
+          0
+        );
+        const nextStart = Math.max(blockStart, start - firstLineRemoved);
+        const nextEnd = Math.max(nextStart, end - removedBeforeSelectionEnd);
+        editor.setSelectionRange(nextStart, nextEnd);
+        editor.dispatchEvent(new Event("input", { bubbles: true }));
       };
 
-      const handleEditorClipboardShortcut = async (shortcut) => {
+      const runEditorCommand = (command) => {
         editor.focus();
-
-        try {
-          if (shortcut === "c") {
-            const selection = selectedEditorText();
-            if (selection) {
-              await navigator.clipboard.writeText(selection);
-            }
-            return;
-          }
-
-          if (shortcut === "x") {
-            const selection = selectedEditorText();
-            if (selection) {
-              await navigator.clipboard.writeText(selection);
-              replaceEditorSelection("");
-            }
-            return;
-          }
-
-          if (shortcut === "v") {
-            const clipboardText = await navigator.clipboard.readText();
-            replaceEditorSelection(clipboardText);
-          }
-        } catch {
-          if (document.activeElement !== editor) {
-            editor.focus();
-          }
-          document.execCommand(
-            shortcut === "c" ? "copy" : shortcut === "x" ? "cut" : "paste"
-          );
-        }
+        document.execCommand(command);
       };
 
       const showPaneForMode = (mode) => {
@@ -1204,7 +1232,11 @@ fn app_shell_html() -> &'static str {
 
         if (event.target === editor && event.key === "Tab" && !event.metaKey && !event.ctrlKey) {
           event.preventDefault();
-          insertTab();
+          if (event.shiftKey) {
+            outdentSelectedLines();
+          } else {
+            indentSelectedLines();
+          }
           return;
         }
 
@@ -1226,15 +1258,20 @@ fn app_shell_html() -> &'static str {
           return;
         }
 
-        if (event.key.toLowerCase() === "s") {
+        if (event.key.toLowerCase() === "z" && isWritableMode()) {
+          if (document.activeElement !== editor) {
+            event.preventDefault();
+            runEditorCommand("undo");
+          }
+        } else if (event.key.toLowerCase() === "r" && isWritableMode()) {
+          event.preventDefault();
+          runEditorCommand("redo");
+        } else if (event.key.toLowerCase() === "s") {
           event.preventDefault();
           window.ipc.postMessage(JSON.stringify({ kind: "request-save" }));
         } else if (event.key.toLowerCase() === "a" && isWritableMode()) {
           event.preventDefault();
           selectAllEditorText();
-        } else if (["c", "v", "x"].includes(event.key.toLowerCase()) && isWritableMode()) {
-          event.preventDefault();
-          void handleEditorClipboardShortcut(event.key.toLowerCase());
         } else if (event.key === "/") {
           event.preventDefault();
           window.ipc.postMessage(JSON.stringify({ kind: "toggle-mode" }));
@@ -1466,6 +1503,90 @@ mod macos_menu {
         exit_item.setKeyEquivalentModifierMask(NSEventModifierFlags::Command);
         file_menu.addItem(&exit_item);
         file_menu_item.setSubmenu(Some(&file_menu));
+
+        let edit_menu_item = unsafe {
+            NSMenuItem::initWithTitle_action_keyEquivalent(
+                NSMenuItem::alloc(mtm),
+                ns_string!("Edit"),
+                None,
+                ns_string!(""),
+            )
+        };
+        main_menu.addItem(&edit_menu_item);
+
+        let edit_menu = NSMenu::initWithTitle(NSMenu::alloc(mtm), ns_string!("Edit"));
+
+        let undo_item = unsafe {
+            NSMenuItem::initWithTitle_action_keyEquivalent(
+                NSMenuItem::alloc(mtm),
+                ns_string!("Undo"),
+                Some(sel!(undo:)),
+                ns_string!("z"),
+            )
+        };
+        undo_item.setKeyEquivalentModifierMask(NSEventModifierFlags::Command);
+        edit_menu.addItem(&undo_item);
+
+        let redo_item = unsafe {
+            NSMenuItem::initWithTitle_action_keyEquivalent(
+                NSMenuItem::alloc(mtm),
+                ns_string!("Redo"),
+                Some(sel!(redo:)),
+                ns_string!("r"),
+            )
+        };
+        redo_item.setKeyEquivalentModifierMask(NSEventModifierFlags::Command);
+        edit_menu.addItem(&redo_item);
+
+        edit_menu.addItem(&NSMenuItem::separatorItem(mtm));
+
+        let cut_item = unsafe {
+            NSMenuItem::initWithTitle_action_keyEquivalent(
+                NSMenuItem::alloc(mtm),
+                ns_string!("Cut"),
+                Some(sel!(cut:)),
+                ns_string!("x"),
+            )
+        };
+        cut_item.setKeyEquivalentModifierMask(NSEventModifierFlags::Command);
+        edit_menu.addItem(&cut_item);
+
+        let copy_item = unsafe {
+            NSMenuItem::initWithTitle_action_keyEquivalent(
+                NSMenuItem::alloc(mtm),
+                ns_string!("Copy"),
+                Some(sel!(copy:)),
+                ns_string!("c"),
+            )
+        };
+        copy_item.setKeyEquivalentModifierMask(NSEventModifierFlags::Command);
+        edit_menu.addItem(&copy_item);
+
+        let paste_item = unsafe {
+            NSMenuItem::initWithTitle_action_keyEquivalent(
+                NSMenuItem::alloc(mtm),
+                ns_string!("Paste"),
+                Some(sel!(paste:)),
+                ns_string!("v"),
+            )
+        };
+        paste_item.setKeyEquivalentModifierMask(NSEventModifierFlags::Command);
+        edit_menu.addItem(&paste_item);
+
+        edit_menu.addItem(&NSMenuItem::separatorItem(mtm));
+
+        let select_all_item = unsafe {
+            NSMenuItem::initWithTitle_action_keyEquivalent(
+                NSMenuItem::alloc(mtm),
+                ns_string!("Select All"),
+                Some(sel!(selectAll:)),
+                ns_string!("a"),
+            )
+        };
+        select_all_item.setKeyEquivalentModifierMask(NSEventModifierFlags::Command);
+        edit_menu.addItem(&select_all_item);
+
+        edit_menu_item.setSubmenu(Some(&edit_menu));
 
         app.setMainMenu(Some(&main_menu));
 
