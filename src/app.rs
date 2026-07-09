@@ -386,7 +386,7 @@ fn render_status(webview: &WebView, message: &str, level: &str) {
 fn render_about(webview: &WebView) {
     let script = format!(
         "window.showAbout({{version:{}, author:{}, githubUrl:{}, buildTarget:{}, buildPlatform:{}}});",
-        serde_json::to_string(APP_VERSION).unwrap_or_else(|_| "\"0.6.0\"".to_string()),
+        serde_json::to_string(APP_VERSION).unwrap_or_else(|_| "\"0.6.1\"".to_string()),
         serde_json::to_string(APP_AUTHOR).unwrap_or_else(|_| "\"Ronnie Deng\"".to_string()),
         serde_json::to_string(APP_GITHUB_URL)
             .unwrap_or_else(|_| "\"https://github.com/phpple/markhola\"".to_string()),
@@ -672,6 +672,87 @@ fn app_shell_html() -> &'static str {
         border-radius: 16px;
         background: #211d19;
         color: #f8f5ee;
+      }
+
+      .markdown-body pre code {
+        display: block;
+        background: transparent;
+        padding: 0;
+        border-radius: 0;
+        font-size: inherit;
+      }
+
+      .markdown-body .code-block {
+        position: relative;
+        margin: 1.2em 0;
+        border-radius: 18px;
+        background: #211d19;
+        box-shadow: 0 12px 34px rgba(56, 41, 28, 0.16);
+        overflow: hidden;
+      }
+
+      .markdown-body .code-block__badge {
+        position: absolute;
+        top: 12px;
+        right: 14px;
+        z-index: 1;
+        padding: 4px 10px;
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.12);
+        color: rgba(248, 245, 238, 0.92);
+        font: 11px/1.2 var(--font-ui);
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        opacity: 0;
+        transition: opacity 140ms ease;
+        pointer-events: none;
+      }
+
+      .markdown-body .code-block:hover .code-block__badge {
+        opacity: 1;
+      }
+
+      .markdown-body .code-block__body {
+        display: grid;
+        grid-template-columns: auto minmax(0, 1fr);
+        align-items: stretch;
+        overflow: auto;
+      }
+
+      .markdown-body .code-block__line-numbers {
+        display: grid;
+        align-content: start;
+        padding: 18px 0 18px 14px;
+        background: rgba(255, 255, 255, 0.04);
+        border-right: 1px solid rgba(255, 255, 255, 0.08);
+        color: rgba(248, 245, 238, 0.42);
+        font: 13px/1.7 var(--font-code);
+        user-select: none;
+      }
+
+      .markdown-body .code-block__line-number {
+        display: block;
+        min-width: 2.4em;
+        padding-right: 12px;
+        text-align: right;
+      }
+
+      .markdown-body .code-block__pre {
+        margin: 0;
+        min-width: 100%;
+        overflow: visible;
+        padding: 18px 18px 18px 16px;
+        border-radius: 0;
+        background: transparent;
+      }
+
+      .markdown-body .code-block__code {
+        white-space: pre;
+      }
+
+      .markdown-body .code-block__line {
+        display: block;
+        min-height: 1.7em;
       }
 
       .markdown-body blockquote {
