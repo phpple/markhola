@@ -14,18 +14,19 @@ ICONSET_DIR="$DIST_DIR/$APP_NAME.icon-build"
 ICNS_PATH="$RESOURCES_DIR/$APP_NAME.icns"
 DMG_ROOT="$DIST_DIR/dmg-root"
 DMG_PATH="$DIST_DIR/${APP_NAME}-${APP_VERSION}.dmg"
-CODESIGN_IDENTITY="${CODESIGN_IDENTITY:?Set CODESIGN_IDENTITY to a Developer ID Application certificate name}"
-NOTARY_PROFILE="${NOTARY_PROFILE:?Set NOTARY_PROFILE to a notarytool Keychain profile}"
+CODESIGN_IDENTITY="${CODESIGN_IDENTITY:-}"
+NOTARY_PROFILE="${NOTARY_PROFILE:-}"
 
 mkdir -p "$DIST_DIR"
 rm -rf "$DIST_DIR/$APP_NAME.iconset"
 
-echo "==> Building Rust binary"
-cargo build --release --manifest-path "$ROOT_DIR/Cargo.toml"
-
-echo "==> Rendering macOS iconset"
-rm -rf "$ICONSET_DIR"
-mkdir -p "$ICONSET_DIR"
+require_command() {
+  local command_name="$1"
+  if ! command -v "$command_name" >/dev/null 2>&1; then
+    echo "Missing required command: $command_name" >&2
+    exit 1
+  fi
+}
 
 render_icon() {
   local size="$1"
@@ -33,24 +34,32 @@ render_icon() {
   rsvg-convert -w "$size" -h "$size" "$ROOT_DIR/assets/app-icon.svg" -o "$output"
 }
 
-render_icon 16 "$ICONSET_DIR/icon_16x16.png"
-render_icon 32 "$ICONSET_DIR/icon_32x32.png"
-render_icon 48 "$ICONSET_DIR/icon_48x48.png"
-render_icon 128 "$ICONSET_DIR/icon_128x128.png"
-render_icon 256 "$ICONSET_DIR/icon_256x256.png"
-render_icon 512 "$ICONSET_DIR/icon_512x512.png"
-render_icon 1024 "$ICONSET_DIR/icon_1024x1024.png"
+build_app_bundle() {
+  echo "==> Building Rust binary"
+  cargo build --release --manifest-path "$ROOT_DIR/Cargo.toml"
 
-echo "==> Creating icns"
-rm -rf "$APP_DIR"
-mkdir -p "$MACOS_DIR" "$RESOURCES_DIR"
-cargo run --manifest-path "$ROOT_DIR/Cargo.toml" --bin make_icns -- "$ICONSET_DIR" "$ICNS_PATH"
+  echo "==> Rendering macOS iconset"
+  rm -rf "$ICONSET_DIR"
+  mkdir -p "$ICONSET_DIR"
 
-echo "==> Assembling app bundle"
-cp "$ROOT_DIR/target/release/markhola" "$MACOS_DIR/$APP_NAME"
-chmod +x "$MACOS_DIR/$APP_NAME"
+  render_icon 16 "$ICONSET_DIR/icon_16x16.png"
+  render_icon 32 "$ICONSET_DIR/icon_32x32.png"
+  render_icon 48 "$ICONSET_DIR/icon_48x48.png"
+  render_icon 128 "$ICONSET_DIR/icon_128x128.png"
+  render_icon 256 "$ICONSET_DIR/icon_256x256.png"
+  render_icon 512 "$ICONSET_DIR/icon_512x512.png"
+  render_icon 1024 "$ICONSET_DIR/icon_1024x1024.png"
 
-cat > "$CONTENTS_DIR/Info.plist" <<PLIST
+  echo "==> Creating icns"
+  rm -rf "$APP_DIR"
+  mkdir -p "$MACOS_DIR" "$RESOURCES_DIR"
+  cargo run --manifest-path "$ROOT_DIR/Cargo.toml" --bin make_icns -- "$ICONSET_DIR" "$ICNS_PATH"
+
+  echo "==> Assembling app bundle"
+  cp "$ROOT_DIR/target/release/markhola" "$MACOS_DIR/$APP_NAME"
+  chmod +x "$MACOS_DIR/$APP_NAME"
+
+  cat > "$CONTENTS_DIR/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -137,48 +146,91 @@ cat > "$CONTENTS_DIR/Info.plist" <<PLIST
   </dict>
 </plist>
 PLIST
+}
 
-echo "==> Signing app bundle"
-xattr -cr "$APP_DIR"
-codesign \
-  --force \
-  --options runtime \
-  --timestamp \
-  --sign "$CODESIGN_IDENTITY" \
-  "$APP_DIR"
-codesign --verify --deep --strict --verbose=2 "$APP_DIR"
+sign_app_bundle() {
+  echo "==> Preparing app bundle for signing"
+  xattr -cr "$APP_DIR"
 
-echo "==> Preparing DMG root"
-rm -rf "$DMG_ROOT"
-mkdir -p "$DMG_ROOT"
-cp -R "$APP_DIR" "$DMG_ROOT/"
-ln -s /Applications "$DMG_ROOT/Applications"
+  if [[ -n "$CODESIGN_IDENTITY" ]]; then
+    echo "==> Signing app bundle with Developer ID"
+    codesign \
+      --force \
+      --deep \
+      --options runtime \
+      --timestamp \
+      --sign "$CODESIGN_IDENTITY" \
+      "$APP_DIR"
+  else
+    echo "==> Signing app bundle with ad-hoc signature"
+    codesign --force --deep --sign - "$APP_DIR"
+    echo "Warning: CODESIGN_IDENTITY is not set, so the app will not pass Gatekeeper on other Macs." >&2
+  fi
 
-echo "==> Creating DMG"
-rm -f "$DMG_PATH"
-hdiutil create \
-  -volname "$APP_NAME" \
-  -srcfolder "$DMG_ROOT" \
-  -ov \
-  -format UDZO \
-  "$DMG_PATH"
+  codesign --verify --deep --strict --verbose=2 "$APP_DIR"
+}
 
-echo "==> Signing disk image"
-codesign \
-  --force \
-  --timestamp \
-  --sign "$CODESIGN_IDENTITY" \
-  "$DMG_PATH"
-codesign --verify --verbose=2 "$DMG_PATH"
+create_dmg() {
+  echo "==> Preparing DMG root"
+  rm -rf "$DMG_ROOT"
+  mkdir -p "$DMG_ROOT"
+  ditto "$APP_DIR" "$DMG_ROOT/$APP_NAME.app"
+  ln -s /Applications "$DMG_ROOT/Applications"
 
-echo "==> Notarizing disk image"
-xcrun notarytool submit "$DMG_PATH" \
-  --keychain-profile "$NOTARY_PROFILE" \
-  --wait
+  echo "==> Creating DMG"
+  rm -f "$DMG_PATH"
+  hdiutil create \
+    -volname "$APP_NAME" \
+    -srcfolder "$DMG_ROOT" \
+    -ov \
+    -format UDZO \
+    "$DMG_PATH"
+  xattr -cr "$DMG_PATH"
+}
 
-echo "==> Stapling notarization ticket"
-xcrun stapler staple "$DMG_PATH"
-xcrun stapler validate "$DMG_PATH"
+sign_and_notarize_dmg() {
+  if [[ -z "$CODESIGN_IDENTITY" ]]; then
+    echo "==> Skipping DMG signing and notarization"
+    return
+  fi
+
+  echo "==> Signing disk image"
+  codesign \
+    --force \
+    --timestamp \
+    --sign "$CODESIGN_IDENTITY" \
+    "$DMG_PATH"
+  codesign --verify --verbose=2 "$DMG_PATH"
+
+  if [[ -z "$NOTARY_PROFILE" ]]; then
+    echo "Warning: NOTARY_PROFILE is not set, so notarization is skipped." >&2
+    return
+  fi
+
+  echo "==> Notarizing disk image"
+  xcrun notarytool submit "$DMG_PATH" \
+    --keychain-profile "$NOTARY_PROFILE" \
+    --wait
+
+  echo "==> Stapling notarization ticket"
+  xcrun stapler staple "$DMG_PATH"
+  xcrun stapler validate "$DMG_PATH"
+}
+
+require_command cargo
+require_command rsvg-convert
+require_command codesign
+require_command hdiutil
+require_command ditto
+
+if [[ -n "$NOTARY_PROFILE" ]]; then
+  require_command xcrun
+fi
+
+build_app_bundle
+sign_app_bundle
+create_dmg
+sign_and_notarize_dmg
 
 echo "==> Done"
 echo "App bundle: $APP_DIR"
