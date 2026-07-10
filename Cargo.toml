@@ -4,6 +4,8 @@ version = "0.6.1"
 edition = "2024"
 
 [dependencies]
+chardetng = "=0.1.17"
+encoding_rs = "=0.8.35"
 icns = { version = "=0.4.0", default-features = false, features = ["pngio"] }
 objc2 = "=0.6.4"
 objc2-app-kit = { version = "=0.3.2", features = ["NSApplication", "NSDocumentController", "NSEvent", "NSMenu", "NSMenuItem", "NSResponder"] }
