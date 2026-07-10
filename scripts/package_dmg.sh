@@ -14,12 +14,14 @@ ICONSET_DIR="$DIST_DIR/$APP_NAME.icon-build"
 ICNS_PATH="$RESOURCES_DIR/$APP_NAME.icns"
 DMG_ROOT="$DIST_DIR/dmg-root"
 DMG_PATH="$DIST_DIR/${APP_NAME}-${APP_VERSION}.dmg"
+CODESIGN_IDENTITY="${CODESIGN_IDENTITY:?Set CODESIGN_IDENTITY to a Developer ID Application certificate name}"
+NOTARY_PROFILE="${NOTARY_PROFILE:?Set NOTARY_PROFILE to a notarytool Keychain profile}"
 
 mkdir -p "$DIST_DIR"
 rm -rf "$DIST_DIR/$APP_NAME.iconset"
 
 echo "==> Building Rust binary"
-cargo build --manifest-path "$ROOT_DIR/Cargo.toml"
+cargo build --release --manifest-path "$ROOT_DIR/Cargo.toml"
 
 echo "==> Rendering macOS iconset"
 rm -rf "$ICONSET_DIR"
@@ -45,7 +47,7 @@ mkdir -p "$MACOS_DIR" "$RESOURCES_DIR"
 cargo run --manifest-path "$ROOT_DIR/Cargo.toml" --bin make_icns -- "$ICONSET_DIR" "$ICNS_PATH"
 
 echo "==> Assembling app bundle"
-cp "$ROOT_DIR/target/debug/markhola" "$MACOS_DIR/$APP_NAME"
+cp "$ROOT_DIR/target/release/markhola" "$MACOS_DIR/$APP_NAME"
 chmod +x "$MACOS_DIR/$APP_NAME"
 
 cat > "$CONTENTS_DIR/Info.plist" <<PLIST
@@ -136,6 +138,16 @@ cat > "$CONTENTS_DIR/Info.plist" <<PLIST
 </plist>
 PLIST
 
+echo "==> Signing app bundle"
+xattr -cr "$APP_DIR"
+codesign \
+  --force \
+  --options runtime \
+  --timestamp \
+  --sign "$CODESIGN_IDENTITY" \
+  "$APP_DIR"
+codesign --verify --deep --strict --verbose=2 "$APP_DIR"
+
 echo "==> Preparing DMG root"
 rm -rf "$DMG_ROOT"
 mkdir -p "$DMG_ROOT"
@@ -150,6 +162,23 @@ hdiutil create \
   -ov \
   -format UDZO \
   "$DMG_PATH"
+
+echo "==> Signing disk image"
+codesign \
+  --force \
+  --timestamp \
+  --sign "$CODESIGN_IDENTITY" \
+  "$DMG_PATH"
+codesign --verify --verbose=2 "$DMG_PATH"
+
+echo "==> Notarizing disk image"
+xcrun notarytool submit "$DMG_PATH" \
+  --keychain-profile "$NOTARY_PROFILE" \
+  --wait
+
+echo "==> Stapling notarization ticket"
+xcrun stapler staple "$DMG_PATH"
+xcrun stapler validate "$DMG_PATH"
 
 echo "==> Done"
 echo "App bundle: $APP_DIR"
