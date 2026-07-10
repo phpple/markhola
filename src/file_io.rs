@@ -45,15 +45,20 @@ pub fn ensure_supported_markdown_path(path: &Path) -> Result<(), String> {
         return Err(format!("File not found: {}", path.display()));
     }
 
+    if is_supported_markdown_path(path) {
+        Ok(())
+    } else {
+        Err("Only .md and .markdown files are supported in v0.6.0.".to_string())
+    }
+}
+
+pub fn is_supported_markdown_path(path: &Path) -> bool {
     let extension = path
         .extension()
         .and_then(|value| value.to_str())
         .map(|value| value.to_ascii_lowercase());
 
-    match extension.as_deref() {
-        Some("md") | Some("markdown") => Ok(()),
-        _ => Err("Only .md and .markdown files are supported in v0.6.0.".to_string()),
-    }
+    matches!(extension.as_deref(), Some("md") | Some("markdown"))
 }
 
 pub fn directory_base_url(path: &Path) -> Result<String, String> {
@@ -71,7 +76,9 @@ mod tests {
     use std::path::PathBuf;
     use std::time::{SystemTime, UNIX_EPOCH};
 
-    use super::{ensure_supported_markdown_path, load_markdown, save_markdown};
+    use super::{
+        ensure_supported_markdown_path, is_supported_markdown_path, load_markdown, save_markdown,
+    };
 
     fn temp_file(name: &str, extension: &str) -> PathBuf {
         let stamp = SystemTime::now()
@@ -102,6 +109,13 @@ mod tests {
         let error = ensure_supported_markdown_path(&temp_path).unwrap_err();
         assert!(error.contains("Only .md and .markdown files are supported"));
         let _ = fs::remove_file(&temp_path);
+    }
+
+    #[test]
+    fn detects_supported_markdown_extensions_without_requiring_existing_file() {
+        assert!(is_supported_markdown_path(&PathBuf::from("技术.MD")));
+        assert!(is_supported_markdown_path(&PathBuf::from("notes.markdown")));
+        assert!(!is_supported_markdown_path(&PathBuf::from("notes.txt")));
     }
 
     #[test]

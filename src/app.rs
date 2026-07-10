@@ -8,9 +8,10 @@ use tao::event::{ElementState, Event, StartCause, WindowEvent};
 use tao::event_loop::{ControlFlow, EventLoopBuilder, EventLoopProxy};
 use tao::keyboard::{KeyCode, ModifiersState};
 use tao::window::{Window, WindowBuilder};
+use url::Url;
 use wry::{WebView, WebViewBuilder};
 
-use crate::document::{ActiveDocument, DocumentSnapshot, DocumentMode};
+use crate::document::{ActiveDocument, DocumentMode, DocumentSnapshot};
 use crate::file_io;
 
 const WINDOW_TITLE: &str = "MarkHola";
@@ -52,6 +53,16 @@ struct DocumentPresentation<'a> {
     status_message: &'a str,
 }
 
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct AboutPayload<'a> {
+    version: &'a str,
+    author: &'a str,
+    github_url: &'a str,
+    build_target: &'a str,
+    build_platform: &'a str,
+}
+
 pub fn run() -> Result<(), Box<dyn std::error::Error>> {
     let event_loop = EventLoopBuilder::<UserEvent>::with_user_event().build();
     let proxy = event_loop.create_proxy();
@@ -65,8 +76,17 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
         .build(&event_loop)?;
 
     let ipc_proxy = proxy.clone();
+    let navigation_proxy = proxy.clone();
     let webview = WebViewBuilder::new()
         .with_html(app_shell_html())
+        .with_navigation_handler(move |href| {
+            if let Some(path) = markdown_path_from_file_url(&href) {
+                let _ = navigation_proxy.send_event(UserEvent::OpenPath(path));
+                false
+            } else {
+                true
+            }
+        })
         .with_ipc_handler(move |request| {
             handle_ipc_message(&ipc_proxy, request.body().to_owned());
         })
@@ -80,7 +100,11 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
 
         match event {
             Event::NewEvents(StartCause::Init) => {
-                render_status(&webview, "Ready. Open a Markdown file or press Command+O.", "info");
+                render_status(
+                    &webview,
+                    "Ready. Open a Markdown file or press Command+O.",
+                    "info",
+                );
             }
             Event::Opened { urls } => {
                 if let Some(url) = urls.into_iter().find(|url| url.scheme() == "file") {
@@ -89,7 +113,11 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
                             let _ = proxy.send_event(UserEvent::OpenPath(path));
                         }
                         Err(_) => {
-                            render_status(&webview, "The requested file path is not valid.", "error");
+                            render_status(
+                                &webview,
+                                "The requested file path is not valid.",
+                                "error",
+                            );
                         }
                     }
                 }
@@ -124,7 +152,11 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
                     render_status(&webview, &message, "info");
                 }
                 WindowEvent::HoveredFileCancelled => {
-                    render_status(&webview, "Ready. Open a Markdown file or press Command+O.", "info");
+                    render_status(
+                        &webview,
+                        "Ready. Open a Markdown file or press Command+O.",
+                        "info",
+                    );
                 }
                 WindowEvent::DroppedFile(path) => {
                     let _ = proxy.send_event(UserEvent::OpenPath(path));
@@ -255,7 +287,11 @@ fn load_document(path: &PathBuf) -> Result<ActiveDocument, String> {
     Ok(ActiveDocument::open(path.clone(), markdown, base_url))
 }
 
-fn save_active_document(window: &Window, webview: &WebView, active_document: &mut Option<ActiveDocument>) -> bool {
+fn save_active_document(
+    window: &Window,
+    webview: &WebView,
+    active_document: &mut Option<ActiveDocument>,
+) -> bool {
     let Some(document) = active_document.as_mut() else {
         render_status(webview, "No document to save.", "error");
         return false;
@@ -314,7 +350,13 @@ fn ask_pending_changes_action(window: &Window, file_name: &str) -> PendingChange
     }
 }
 
-fn present_document(window: &Window, webview: &WebView, document: &ActiveDocument, status: &str, full_render: bool) {
+fn present_document(
+    window: &Window,
+    webview: &WebView,
+    document: &ActiveDocument,
+    status: &str,
+    full_render: bool,
+) {
     update_window_title(window, Some(document));
 
     if full_render {
@@ -337,10 +379,14 @@ fn render_document(webview: &WebView, document: &ActiveDocument, status: &str) {
         document: &snapshot,
         status_message: status,
     };
-    let serialized = match serde_json::to_string(&payload) {
+    let serialized = match serialize_for_script(&payload) {
         Ok(serialized) => serialized,
         Err(error) => {
-            render_status(webview, &format!("Failed to serialize document: {error}"), "error");
+            render_status(
+                webview,
+                &format!("Failed to serialize document: {error}"),
+                "error",
+            );
             return;
         }
     };
@@ -351,7 +397,12 @@ fn render_document(webview: &WebView, document: &ActiveDocument, status: &str) {
     }
 }
 
-fn sync_document_state(window: &Window, webview: &WebView, document: &ActiveDocument, status: &str) {
+fn sync_document_state(
+    window: &Window,
+    webview: &WebView,
+    document: &ActiveDocument,
+    status: &str,
+) {
     update_window_title(window, Some(document));
 
     let snapshot = document.snapshot();
@@ -359,10 +410,14 @@ fn sync_document_state(window: &Window, webview: &WebView, document: &ActiveDocu
         document: &snapshot,
         status_message: status,
     };
-    let serialized = match serde_json::to_string(&payload) {
+    let serialized = match serialize_for_script(&payload) {
         Ok(serialized) => serialized,
         Err(error) => {
-            render_status(webview, &format!("Failed to serialize document: {error}"), "error");
+            render_status(
+                webview,
+                &format!("Failed to serialize document: {error}"),
+                "error",
+            );
             return;
         }
     };
@@ -375,7 +430,7 @@ fn sync_document_state(window: &Window, webview: &WebView, document: &ActiveDocu
 
 fn render_status(webview: &WebView, message: &str, level: &str) {
     let payload = StatusPayload { message, level };
-    let serialized = match serde_json::to_string(&payload) {
+    let serialized = match serialize_for_script(&payload) {
         Ok(serialized) => serialized,
         Err(_) => return,
     };
@@ -384,16 +439,50 @@ fn render_status(webview: &WebView, message: &str, level: &str) {
 }
 
 fn render_about(webview: &WebView) {
-    let script = format!(
-        "window.showAbout({{version:{}, author:{}, githubUrl:{}, buildTarget:{}, buildPlatform:{}}});",
-        serde_json::to_string(APP_VERSION).unwrap_or_else(|_| "\"0.6.1\"".to_string()),
-        serde_json::to_string(APP_AUTHOR).unwrap_or_else(|_| "\"Ronnie Deng\"".to_string()),
-        serde_json::to_string(APP_GITHUB_URL)
-            .unwrap_or_else(|_| "\"https://github.com/phpple/markhola\"".to_string()),
-        serde_json::to_string(APP_BUILD_TARGET).unwrap_or_else(|_| "\"unknown\"".to_string()),
-        serde_json::to_string(APP_BUILD_PLATFORM).unwrap_or_else(|_| "\"unknown\"".to_string())
-    );
+    let payload = AboutPayload {
+        version: APP_VERSION,
+        author: APP_AUTHOR,
+        github_url: APP_GITHUB_URL,
+        build_target: APP_BUILD_TARGET,
+        build_platform: APP_BUILD_PLATFORM,
+    };
+    let serialized = match serialize_for_script(&payload) {
+        Ok(serialized) => serialized,
+        Err(_) => return,
+    };
+    let script = format!("window.showAbout({serialized});");
     let _ = webview.evaluate_script(&script);
+}
+
+fn markdown_path_from_file_url(href: &str) -> Option<PathBuf> {
+    let url = Url::parse(href).ok()?;
+    if url.scheme() != "file" {
+        return None;
+    }
+
+    let path = url.to_file_path().ok()?;
+    file_io::is_supported_markdown_path(&path).then_some(path)
+}
+
+fn serialize_for_script<T: Serialize>(payload: &T) -> Result<String, serde_json::Error> {
+    serde_json::to_string(payload).map(|serialized| escape_non_ascii_for_script(&serialized))
+}
+
+fn escape_non_ascii_for_script(value: &str) -> String {
+    use std::fmt::Write as _;
+
+    let mut escaped = String::with_capacity(value.len());
+    for character in value.chars() {
+        if character.is_ascii() {
+            escaped.push(character);
+        } else {
+            let mut units = [0_u16; 2];
+            for unit in character.encode_utf16(&mut units).iter().copied() {
+                let _ = write!(escaped, "\\u{unit:04x}");
+            }
+        }
+    }
+    escaped
 }
 
 fn app_shell_html() -> &'static str {
@@ -1340,15 +1429,66 @@ fn app_shell_html() -> &'static str {
 "##
 }
 
+#[cfg(test)]
+mod tests {
+    use std::path::PathBuf;
+
+    use url::Url;
+
+    use super::{
+        escape_non_ascii_for_script, markdown_path_from_file_url, serialize_for_script,
+        StatusPayload,
+    };
+
+    #[test]
+    fn extracts_utf8_markdown_path_from_file_url() {
+        let path = PathBuf::from("/Users/syang/Desktop/技术.md");
+        let href = Url::from_file_path(&path).unwrap().to_string();
+
+        assert_eq!(markdown_path_from_file_url(&href), Some(path));
+    }
+
+    #[test]
+    fn rejects_non_markdown_navigation_urls() {
+        assert_eq!(
+            markdown_path_from_file_url("https://example.com/readme.md"),
+            None
+        );
+        assert_eq!(
+            markdown_path_from_file_url("file:///Users/syang/Desktop/image.png"),
+            None
+        );
+    }
+
+    #[test]
+    fn serializes_script_payload_without_literal_non_ascii() {
+        let payload = StatusPayload {
+            message: "分布式 → 已打开",
+            level: "info",
+        };
+        let serialized = serialize_for_script(&payload).unwrap();
+
+        assert!(serialized.contains("\\u5206\\u5e03\\u5f0f"));
+        assert!(serialized.contains("\\u2192"));
+        assert!(serialized.contains("\"level\":\"info\""));
+        assert!(!serialized.contains("分布式"));
+    }
+
+    #[test]
+    fn escapes_non_bmp_characters_as_surrogate_pairs() {
+        assert_eq!(escape_non_ascii_for_script("ok 😀"), "ok \\ud83d\\ude00");
+    }
+}
+
 #[cfg(target_os = "macos")]
 mod macos_menu {
     use std::error::Error;
 
     use objc2::rc::Retained;
     use objc2::runtime::AnyObject;
-    use objc2::{DefinedClass, MainThreadOnly, define_class, sel};
+    use objc2::{define_class, sel, DefinedClass, MainThreadOnly};
     use objc2_app_kit::{NSApp, NSApplication, NSEventModifierFlags, NSMenu, NSMenuItem};
-    use objc2_foundation::{MainThreadMarker, NSObject, NSObjectProtocol, ns_string};
+    use objc2_foundation::{ns_string, MainThreadMarker, NSObject, NSObjectProtocol};
     use tao::event_loop::EventLoopProxy;
 
     use super::UserEvent;
