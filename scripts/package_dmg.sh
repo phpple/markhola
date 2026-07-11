@@ -80,6 +80,8 @@ build_app_bundle() {
     <string>${APP_NAME}</string>
     <key>CFBundlePackageType</key>
     <string>APPL</string>
+    <key>NSPrincipalClass</key>
+    <string>NSApplication</string>
     <key>UTImportedTypeDeclarations</key>
     <array>
       <dict>
@@ -114,9 +116,9 @@ build_app_bundle() {
         <key>CFBundleTypeName</key>
         <string>Markdown Document</string>
         <key>CFBundleTypeRole</key>
-        <string>Viewer</string>
+        <string>Editor</string>
         <key>LSHandlerRank</key>
-        <string>Default</string>
+        <string>Owner</string>
         <key>CFBundleTypeExtensions</key>
         <array>
           <string>md</string>
@@ -139,6 +141,8 @@ build_app_bundle() {
     <string>${APP_VERSION}</string>
     <key>LSMinimumSystemVersion</key>
     <string>14.0</string>
+    <key>LSSupportsOpeningDocumentsInPlace</key>
+    <true/>
     <key>NSDocumentsFolderUsageDescription</key>
     <string>MarkHola opens local Markdown documents for preview.</string>
     <key>NSHighResolutionCapable</key>

@@ -1,4 +1,11 @@
-use std::path::PathBuf;
+use std::ffi::{c_char, c_long, CStr};
+use std::fs::{OpenOptions, create_dir_all};
+use std::io::Write;
+use std::path::{Path, PathBuf};
+use std::sync::Once;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::thread;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use rfd::{FileDialog, MessageButtons, MessageDialog, MessageDialogResult, MessageLevel};
 use serde::Serialize;
@@ -19,11 +26,17 @@ const APP_AUTHOR: &str = "Ronnie Deng";
 const APP_GITHUB_URL: &str = "https://github.com/phpple/markhola";
 const APP_BUILD_TARGET: &str = std::env::consts::ARCH;
 const APP_BUILD_PLATFORM: &str = std::env::consts::OS;
+const MERMAID_RUNTIME: &str = include_str!("../assets/mermaid/mermaid.min.js");
+const DEBUG_LOG_DIR: &str = "/var/log/markhola";
+const DEBUG_LOG_FALLBACK_PATH: &str = "/tmp/markhola.log";
+static NEXT_EVENT_ID: AtomicU64 = AtomicU64::new(1);
+static PANIC_HOOK_ONCE: Once = Once::new();
 
 #[derive(Clone, Debug)]
 enum UserEvent {
-    OpenFile,
-    OpenPath(PathBuf),
+    OpenFile(ActionContext),
+    OpenPath(OpenPathRequest),
+    ShellReady,
     OpenExternal(String),
     SaveDocument,
     ToggleMode,
@@ -52,11 +65,260 @@ struct DocumentPresentation<'a> {
     status_message: &'a str,
 }
 
+#[derive(Clone, Debug)]
+struct ActionContext {
+    event_id: u64,
+    source: &'static str,
+}
+
+#[derive(Clone, Debug)]
+struct OpenPathRequest {
+    ctx: ActionContext,
+    path: PathBuf,
+}
+
+#[repr(C)]
+struct Tm {
+    tm_sec: i32,
+    tm_min: i32,
+    tm_hour: i32,
+    tm_mday: i32,
+    tm_mon: i32,
+    tm_year: i32,
+    tm_wday: i32,
+    tm_yday: i32,
+    tm_isdst: i32,
+    tm_gmtoff: c_long,
+    tm_zone: *const c_char,
+}
+
+unsafe extern "C" {
+    fn localtime_r(timep: *const i64, result: *mut Tm) -> *mut Tm;
+    fn strftime(s: *mut c_char, max: usize, format: *const c_char, tm: *const Tm) -> usize;
+}
+
+fn current_date_stamp() -> Option<String> {
+    let seconds = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .ok()?
+        .as_secs() as i64;
+    let mut tm = Tm {
+        tm_sec: 0,
+        tm_min: 0,
+        tm_hour: 0,
+        tm_mday: 0,
+        tm_mon: 0,
+        tm_year: 0,
+        tm_wday: 0,
+        tm_yday: 0,
+        tm_isdst: 0,
+        tm_gmtoff: 0,
+        tm_zone: std::ptr::null(),
+    };
+
+    // SAFETY: localtime_r and strftime are called with valid pointers and fixed-size buffers.
+    unsafe {
+        if localtime_r(&seconds, &mut tm).is_null() {
+            return None;
+        }
+
+        let format = b"%Y%m%d\0";
+        let mut buffer = [0 as c_char; 16];
+        let written = strftime(buffer.as_mut_ptr(), buffer.len(), format.as_ptr().cast(), &tm);
+        if written == 0 {
+            return None;
+        }
+
+        CStr::from_ptr(buffer.as_ptr())
+            .to_str()
+            .ok()
+            .map(ToOwned::to_owned)
+    }
+}
+
+fn primary_debug_log_path() -> Option<PathBuf> {
+    let date = current_date_stamp()?;
+    Some(Path::new(DEBUG_LOG_DIR).join(format!("markholo-{date}.log")))
+}
+
+fn current_timestamp() -> Option<String> {
+    let now = SystemTime::now().duration_since(UNIX_EPOCH).ok()?;
+    let seconds = now.as_secs() as i64;
+    let millis = now.subsec_millis();
+    let mut tm = Tm {
+        tm_sec: 0,
+        tm_min: 0,
+        tm_hour: 0,
+        tm_mday: 0,
+        tm_mon: 0,
+        tm_year: 0,
+        tm_wday: 0,
+        tm_yday: 0,
+        tm_isdst: 0,
+        tm_gmtoff: 0,
+        tm_zone: std::ptr::null(),
+    };
+
+    // SAFETY: localtime_r and strftime are called with valid pointers and fixed-size buffers.
+    unsafe {
+        if localtime_r(&seconds, &mut tm).is_null() {
+            return None;
+        }
+
+        let format = b"%Y-%m-%dT%H:%M:%S\0";
+        let mut buffer = [0 as c_char; 32];
+        let written = strftime(buffer.as_mut_ptr(), buffer.len(), format.as_ptr().cast(), &tm);
+        if written == 0 {
+            return None;
+        }
+
+        let base = CStr::from_ptr(buffer.as_ptr()).to_str().ok()?;
+        Some(format!("{base}.{millis:03}"))
+    }
+}
+
+fn append_log_line(path: &Path, line: &str) -> bool {
+    if let Some(parent) = path.parent() {
+        if create_dir_all(parent).is_err() {
+            return false;
+        }
+    }
+
+    if let Ok(mut file) = OpenOptions::new().create(true).append(true).open(path) {
+        return file.write_all(line.as_bytes()).is_ok();
+    }
+
+    false
+}
+
+fn debug_log(message: impl AsRef<str>) {
+    let ts = current_timestamp().unwrap_or_else(|| "unknown-ts".to_string());
+    let pid = std::process::id();
+    let current_thread = thread::current();
+    let tid = current_thread.name().unwrap_or("unnamed");
+    let line = format!("ts={ts} pid={pid} tid={tid} {}\n", message.as_ref());
+    eprint!("{line}");
+
+    let wrote_primary = primary_debug_log_path()
+        .as_deref()
+        .map(|path| append_log_line(path, &line))
+        .unwrap_or(false);
+
+    if !wrote_primary {
+        let fallback_notice = format!(
+            "ts={ts} pid={pid} tid={tid} stage=logger event_id=system msg=\"primary log path unavailable\" primary_path={} fallback_path={}\n",
+            primary_debug_log_path()
+                .map(|path| path.display().to_string())
+                .unwrap_or_else(|| "<none>".to_string()),
+            DEBUG_LOG_FALLBACK_PATH
+        );
+        let _ = append_log_line(Path::new(DEBUG_LOG_FALLBACK_PATH), &fallback_notice);
+        let _ = append_log_line(Path::new(DEBUG_LOG_FALLBACK_PATH), &line);
+    }
+}
+
+fn log_event(stage: &str, event_id: Option<u64>, message: &str, extra: impl AsRef<str>) {
+    let event_id = event_id
+        .map(|id| format!("open-{id}"))
+        .unwrap_or_else(|| "system".to_string());
+    let extra = extra.as_ref();
+    if extra.is_empty() {
+        debug_log(format!("stage={stage} event_id={event_id} msg=\"{message}\""));
+    } else {
+        debug_log(format!("stage={stage} event_id={event_id} msg=\"{message}\" {extra}"));
+    }
+}
+
+fn next_event_id() -> u64 {
+    NEXT_EVENT_ID.fetch_add(1, Ordering::Relaxed)
+}
+
+fn new_action_context(source: &'static str) -> ActionContext {
+    ActionContext {
+        event_id: next_event_id(),
+        source,
+    }
+}
+
+fn install_panic_hook() {
+    PANIC_HOOK_ONCE.call_once(|| {
+        std::panic::set_hook(Box::new(|info| {
+            let location = info
+                .location()
+                .map(|location| format!("{}:{}", location.file(), location.line()))
+                .unwrap_or_else(|| "<unknown>".to_string());
+            let payload = info
+                .payload()
+                .downcast_ref::<&str>()
+                .copied()
+                .or_else(|| info.payload().downcast_ref::<String>().map(String::as_str))
+                .unwrap_or("<non-string panic>");
+            log_event(
+                "panic",
+                None,
+                "application panic",
+                format!("location={location} payload={payload:?}"),
+            );
+        }));
+    });
+}
+
+fn dispatch_user_event(proxy: &EventLoopProxy<UserEvent>, stage_source: &'static str, event: UserEvent) {
+    let (event_id, event_name, details) = match &event {
+        UserEvent::OpenFile(ctx) => (
+            Some(ctx.event_id),
+            "OpenFile",
+            format!("source={} origin={}", stage_source, ctx.source),
+        ),
+        UserEvent::OpenPath(request) => (
+            Some(request.ctx.event_id),
+            "OpenPath",
+            format!(
+                "source={} origin={} path={}",
+                stage_source,
+                request.ctx.source,
+                request.path.display()
+            ),
+        ),
+        UserEvent::ShellReady => (None, "ShellReady", format!("source={stage_source}")),
+        UserEvent::OpenExternal(href) => (None, "OpenExternal", format!("source={} href={href}", stage_source)),
+        UserEvent::SaveDocument => (None, "SaveDocument", format!("source={stage_source}")),
+        UserEvent::ToggleMode => (None, "ToggleMode", format!("source={stage_source}")),
+        UserEvent::EditorChanged(markdown) => (
+            None,
+            "EditorChanged",
+            format!("source={} bytes={}", stage_source, markdown.len()),
+        ),
+        UserEvent::ShowAbout => (None, "ShowAbout", format!("source={stage_source}")),
+        UserEvent::Exit => (None, "Exit", format!("source={stage_source}")),
+    };
+
+    log_event("send_event.begin", event_id, event_name, &details);
+    match proxy.send_event(event) {
+        Ok(()) => log_event("send_event.end", event_id, event_name, format!("{details} result=ok")),
+        Err(error) => log_event(
+            "send_event.end",
+            event_id,
+            event_name,
+            format!("{details} result=err error={error}"),
+        ),
+    }
+}
+
 pub fn run() -> Result<(), Box<dyn std::error::Error>> {
+    install_panic_hook();
+    log_event(
+        "app.start",
+        None,
+        "app run started",
+        format!("version={APP_VERSION} platform={APP_BUILD_PLATFORM}/{APP_BUILD_TARGET}"),
+    );
     let event_loop = EventLoopBuilder::<UserEvent>::with_user_event().build();
     let proxy = event_loop.create_proxy();
     let mut modifiers = ModifiersState::default();
     let mut active_document: Option<ActiveDocument> = None;
+    let mut shell_ready = false;
+    let mut pending_open_requests: Vec<OpenPathRequest> = Vec::new();
 
     let window = WindowBuilder::new()
         .with_title(WINDOW_TITLE)
@@ -80,15 +342,34 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
 
         match event {
             Event::NewEvents(StartCause::Init) => {
+                log_event("event_loop.init", None, "event loop init", "");
                 render_status(&webview, "Ready. Open a Markdown file or press Command+O.", "info");
             }
             Event::Opened { urls } => {
+                log_event("tao.opened.begin", None, "received Event::Opened", format!("urls={urls:?}"));
                 if let Some(url) = urls.into_iter().find(|url| url.scheme() == "file") {
                     match url.to_file_path() {
                         Ok(path) => {
-                            let _ = proxy.send_event(UserEvent::OpenPath(path));
+                            let ctx = new_action_context("tao-opened");
+                            log_event(
+                                "tao.opened.path",
+                                Some(ctx.event_id),
+                                "resolved file path from Event::Opened",
+                                format!("path={}", path.display()),
+                            );
+                            dispatch_user_event(
+                                &proxy,
+                                "tao-opened",
+                                UserEvent::OpenPath(OpenPathRequest { ctx, path }),
+                            );
                         }
                         Err(_) => {
+                            log_event(
+                                "tao.opened.error",
+                                None,
+                                "failed to convert Event::Opened URL to file path",
+                                "",
+                            );
                             render_status(&webview, "The requested file path is not valid.", "error");
                         }
                     }
@@ -96,6 +377,7 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
             }
             Event::WindowEvent { event, .. } => match event {
                 WindowEvent::CloseRequested => {
+                    log_event("window.close_requested", None, "window close requested", "");
                     if resolve_pending_changes(&window, &webview, &mut active_document) {
                         *control_flow = ControlFlow::Exit;
                     }
@@ -107,13 +389,22 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
                     if event.state == ElementState::Released && modifiers.super_key() {
                         match event.physical_key {
                             KeyCode::KeyO => {
-                                let _ = proxy.send_event(UserEvent::OpenFile);
+                                let ctx = new_action_context("keyboard-command-o");
+                                log_event(
+                                    "keyboard.shortcut",
+                                    Some(ctx.event_id),
+                                    "keyboard shortcut triggered",
+                                    "key=Command+O",
+                                );
+                                dispatch_user_event(&proxy, "keyboard", UserEvent::OpenFile(ctx));
                             }
                             KeyCode::KeyS => {
-                                let _ = proxy.send_event(UserEvent::SaveDocument);
+                                log_event("keyboard.shortcut", None, "keyboard shortcut triggered", "key=Command+S");
+                                dispatch_user_event(&proxy, "keyboard", UserEvent::SaveDocument);
                             }
                             KeyCode::Slash => {
-                                let _ = proxy.send_event(UserEvent::ToggleMode);
+                                log_event("keyboard.shortcut", None, "keyboard shortcut triggered", "key=Command+/");
+                                dispatch_user_event(&proxy, "keyboard", UserEvent::ToggleMode);
                             }
                             _ => {}
                         }
@@ -127,36 +418,114 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
                     render_status(&webview, "Ready. Open a Markdown file or press Command+O.", "info");
                 }
                 WindowEvent::DroppedFile(path) => {
-                    let _ = proxy.send_event(UserEvent::OpenPath(path));
+                    let ctx = new_action_context("window-dropped-file");
+                    log_event(
+                        "window.dropped_file",
+                        Some(ctx.event_id),
+                        "window dropped file",
+                        format!("path={}", path.display()),
+                    );
+                    dispatch_user_event(
+                        &proxy,
+                        "window-drop",
+                        UserEvent::OpenPath(OpenPathRequest { ctx, path }),
+                    );
                 }
                 _ => {}
             },
-            Event::UserEvent(UserEvent::OpenFile) => {
+            Event::UserEvent(UserEvent::OpenFile(ctx)) => {
+                log_event(
+                    "user_event.received",
+                    Some(ctx.event_id),
+                    "handling UserEvent::OpenFile",
+                    format!("source={}", ctx.source),
+                );
                 if !resolve_pending_changes(&window, &webview, &mut active_document) {
+                    log_event(
+                        "user_event.aborted",
+                        Some(ctx.event_id),
+                        "UserEvent::OpenFile aborted by pending changes dialog",
+                        "",
+                    );
                     return;
                 }
 
-                match open_document_dialog() {
-                    Some(path) => open_document(&window, &webview, &mut active_document, &path),
-                    None => render_status(&webview, "Open cancelled.", "info"),
+                match open_document_dialog(ctx.event_id) {
+                    Some(path) => {
+                        log_event(
+                            "file_dialog.selected",
+                            Some(ctx.event_id),
+                            "open dialog returned path",
+                            format!("path={}", path.display()),
+                        );
+                        open_document(&window, &webview, &mut active_document, &path, Some(ctx.event_id))
+                    }
+                    None => {
+                        log_event(
+                            "file_dialog.cancelled",
+                            Some(ctx.event_id),
+                            "open dialog cancelled or returned no file",
+                            "",
+                        );
+                        render_status(&webview, "Open cancelled.", "info")
+                    }
                 }
             }
-            Event::UserEvent(UserEvent::OpenPath(path)) => {
+            Event::UserEvent(UserEvent::OpenPath(request)) => {
+                let OpenPathRequest { ctx, path } = request;
+                log_event(
+                    "user_event.received",
+                    Some(ctx.event_id),
+                    "handling UserEvent::OpenPath",
+                    format!("source={} path={}", ctx.source, path.display()),
+                );
+                if !shell_ready {
+                    log_event(
+                        "user_event.deferred",
+                        Some(ctx.event_id),
+                        "deferring OpenPath until shell is ready",
+                        format!("path={}", path.display()),
+                    );
+                    pending_open_requests.push(OpenPathRequest { ctx, path });
+                    return;
+                }
                 if !resolve_pending_changes(&window, &webview, &mut active_document) {
+                    log_event(
+                        "user_event.aborted",
+                        Some(ctx.event_id),
+                        "UserEvent::OpenPath aborted by pending changes dialog",
+                        format!("path={}", path.display()),
+                    );
                     return;
                 }
 
-                open_document(&window, &webview, &mut active_document, &path);
+                open_document(&window, &webview, &mut active_document, &path, Some(ctx.event_id));
+            }
+            Event::UserEvent(UserEvent::ShellReady) => {
+                shell_ready = true;
+                log_event(
+                    "shell.ready",
+                    None,
+                    "webview shell reported ready",
+                    format!("pending_open_requests={}", pending_open_requests.len()),
+                );
+                for request in pending_open_requests.drain(..) {
+                    dispatch_user_event(&proxy, "shell-ready-flush", UserEvent::OpenPath(request));
+                }
             }
             Event::UserEvent(UserEvent::OpenExternal(href)) => {
+                log_event("user_event.received", None, "handling UserEvent::OpenExternal", format!("href={href}"));
                 if let Err(error) = open::that(href) {
+                    log_event("open_external.error", None, "open external failed", format!("error={error}"));
                     render_status(&webview, &format!("Failed to open link: {error}"), "error");
                 }
             }
             Event::UserEvent(UserEvent::SaveDocument) => {
+                log_event("user_event.received", None, "handling UserEvent::SaveDocument", "");
                 save_active_document(&window, &webview, &mut active_document);
             }
             Event::UserEvent(UserEvent::ToggleMode) => {
+                log_event("user_event.received", None, "handling UserEvent::ToggleMode", "");
                 if let Some(document) = active_document.as_mut() {
                     document.toggle_mode();
                     let status = match document.mode() {
@@ -169,15 +538,23 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
                 }
             }
             Event::UserEvent(UserEvent::EditorChanged(markdown)) => {
+                log_event(
+                    "user_event.received",
+                    None,
+                    "handling UserEvent::EditorChanged",
+                    format!("bytes={}", markdown.len()),
+                );
                 if let Some(document) = active_document.as_mut() {
                     document.update_markdown(markdown);
                     sync_document_state(&window, &webview, document, "Unsaved changes.");
                 }
             }
             Event::UserEvent(UserEvent::ShowAbout) => {
+                log_event("user_event.received", None, "handling UserEvent::ShowAbout", "");
                 render_about(&webview);
             }
             Event::UserEvent(UserEvent::Exit) => {
+                log_event("user_event.received", None, "handling UserEvent::Exit", "");
                 if resolve_pending_changes(&window, &webview, &mut active_document) {
                     *control_flow = ControlFlow::Exit;
                 } else {
@@ -193,39 +570,55 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 fn handle_ipc_message(proxy: &EventLoopProxy<UserEvent>, payload: String) {
+    log_event("ipc.received", None, "ipc payload received", format!("payload={payload}"));
     let Ok(value) = serde_json::from_str::<Value>(&payload) else {
+        log_event("ipc.error", None, "ipc payload parsing failed", "");
         return;
     };
 
     match value.get("kind").and_then(Value::as_str) {
         Some("open-file") => {
-            let _ = proxy.send_event(UserEvent::OpenFile);
+            let ctx = new_action_context("ipc-open-file");
+            dispatch_user_event(proxy, "ipc", UserEvent::OpenFile(ctx));
+        }
+        Some("shell-ready") => {
+            dispatch_user_event(proxy, "ipc", UserEvent::ShellReady);
         }
         Some("open-external") => {
             if let Some(href) = value.get("href").and_then(Value::as_str) {
-                let _ = proxy.send_event(UserEvent::OpenExternal(href.to_string()));
+                dispatch_user_event(proxy, "ipc", UserEvent::OpenExternal(href.to_string()));
             }
         }
         Some("toggle-mode") => {
-            let _ = proxy.send_event(UserEvent::ToggleMode);
+            dispatch_user_event(proxy, "ipc", UserEvent::ToggleMode);
         }
         Some("request-save") => {
-            let _ = proxy.send_event(UserEvent::SaveDocument);
+            dispatch_user_event(proxy, "ipc", UserEvent::SaveDocument);
         }
         Some("editor-changed") => {
             if let Some(markdown) = value.get("markdown").and_then(Value::as_str) {
-                let _ = proxy.send_event(UserEvent::EditorChanged(markdown.to_string()));
+                dispatch_user_event(proxy, "ipc", UserEvent::EditorChanged(markdown.to_string()));
             }
         }
         _ => {}
     }
 }
 
-fn open_document_dialog() -> Option<PathBuf> {
-    FileDialog::new()
+fn open_document_dialog(event_id: u64) -> Option<PathBuf> {
+    let started_at = SystemTime::now();
+    log_event("file_dialog.begin", Some(event_id), "opening file dialog", "");
+    let result = FileDialog::new()
         .add_filter("Markdown", &["md", "markdown"])
         .set_title("Open Markdown File")
-        .pick_file()
+        .pick_file();
+    let elapsed_ms = started_at.elapsed().map(|duration| duration.as_millis()).unwrap_or(0);
+    log_event(
+        "file_dialog.end",
+        Some(event_id),
+        "file dialog finished",
+        format!("selected={} elapsed_ms={elapsed_ms}", result.is_some()),
+    );
+    result
 }
 
 fn open_document(
@@ -233,23 +626,43 @@ fn open_document(
     webview: &WebView,
     active_document: &mut Option<ActiveDocument>,
     path: &PathBuf,
+    event_id: Option<u64>,
 ) {
+    log_event(
+        "open_document.begin",
+        event_id,
+        "open_document start",
+        format!("path={}", path.display()),
+    );
     render_status(webview, "Loading document...", "info");
 
     match load_document(path) {
         Ok(document) => {
+            log_event(
+                "open_document.end",
+                event_id,
+                "open_document success",
+                format!("path={}", path.display()),
+            );
             *active_document = Some(document);
             if let Some(document) = active_document.as_ref() {
                 present_document(window, webview, document, "Document loaded.", true);
             }
         }
         Err(message) => {
+            log_event(
+                "open_document.end",
+                event_id,
+                "open_document failed",
+                format!("path={} error={message}", path.display()),
+            );
             render_status(webview, &message, "error");
         }
     }
 }
 
 fn load_document(path: &PathBuf) -> Result<ActiveDocument, String> {
+    log_event("load_document.begin", None, "load_document path", format!("path={}", path.display()));
     let markdown = file_io::load_markdown(path)?;
     let base_url = file_io::directory_base_url(path)?;
     Ok(ActiveDocument::open(path.clone(), markdown, base_url))
@@ -386,7 +799,7 @@ fn render_status(webview: &WebView, message: &str, level: &str) {
 fn render_about(webview: &WebView) {
     let script = format!(
         "window.showAbout({{version:{}, author:{}, githubUrl:{}, buildTarget:{}, buildPlatform:{}}});",
-        serde_json::to_string(APP_VERSION).unwrap_or_else(|_| "\"0.6.1\"".to_string()),
+        serde_json::to_string(APP_VERSION).unwrap_or_else(|_| "\"0.6.2\"".to_string()),
         serde_json::to_string(APP_AUTHOR).unwrap_or_else(|_| "\"Ronnie Deng\"".to_string()),
         serde_json::to_string(APP_GITHUB_URL)
             .unwrap_or_else(|_| "\"https://github.com/phpple/markhola\"".to_string()),
@@ -396,8 +809,15 @@ fn render_about(webview: &WebView) {
     let _ = webview.evaluate_script(&script);
 }
 
-fn app_shell_html() -> &'static str {
-    r##"<!DOCTYPE html>
+fn app_shell_html() -> String {
+    APP_SHELL_HTML.replace("__MERMAID_RUNTIME__", &mermaid_runtime_script())
+}
+
+fn mermaid_runtime_script() -> String {
+    MERMAID_RUNTIME.replace("</script", "<\\/script")
+}
+
+const APP_SHELL_HTML: &str = r##"<!DOCTYPE html>
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
@@ -784,6 +1204,40 @@ fn app_shell_html() -> &'static str {
         line-height: var(--code-line-height);
       }
 
+      .markdown-body .mermaid-block {
+        margin: 1.2em 0;
+        border-radius: 18px;
+        background: rgba(255, 255, 255, 0.9);
+        border: 1px solid rgba(92, 74, 52, 0.12);
+        box-shadow: 0 12px 34px rgba(56, 41, 28, 0.08);
+        overflow: auto;
+      }
+
+      .markdown-body .mermaid-block__status {
+        padding: 12px 16px 0;
+        color: var(--muted);
+        font: 12px/1.4 var(--font-ui);
+      }
+
+      .markdown-body .mermaid-block__diagram {
+        min-width: min-content;
+        padding: 10px 16px 16px;
+      }
+
+      .markdown-body .mermaid-block__diagram svg {
+        display: block;
+        max-width: none;
+        height: auto;
+      }
+
+      .markdown-body .mermaid-block__error {
+        margin: 0;
+        padding: 12px 16px 16px;
+        color: #8b1e1e;
+        font: 13px/1.6 var(--font-code);
+        white-space: pre-wrap;
+      }
+
       .markdown-body blockquote {
         padding: 2px 0 2px 18px;
         border-left: 4px solid rgba(15, 118, 110, 0.3);
@@ -1010,7 +1464,7 @@ fn app_shell_html() -> &'static str {
         <div class="about-meta">
           <div class="about-meta-row">
             <strong>Version</strong>
-            <span class="about-value" id="aboutVersion">0.6.0</span>
+            <span class="about-value" id="aboutVersion">0.6.2</span>
             <span></span>
           </div>
           <div class="about-meta-row">
@@ -1033,6 +1487,7 @@ fn app_shell_html() -> &'static str {
       </div>
     </div>
 
+    <script>__MERMAID_RUNTIME__</script>
     <script>
       const status = document.getElementById("status");
       const documentTitle = document.getElementById("documentTitle");
@@ -1056,6 +1511,7 @@ fn app_shell_html() -> &'static str {
       const aboutBuild = document.getElementById("aboutBuild");
       const aboutGithub = document.getElementById("aboutGithub");
       const aboutCopy = document.getElementById("aboutCopy");
+      let mermaidInitialized = false;
 
       const hideAbout = () => {
         aboutOverlay.classList.add("hidden");
@@ -1194,6 +1650,64 @@ fn app_shell_html() -> &'static str {
         window.showStatus({ message: payload.status_message, level: payload.dirty ? "warning" : "info" });
       };
 
+      const escapeHtml = (value) =>
+        value
+          .replaceAll("&", "&amp;")
+          .replaceAll("<", "&lt;")
+          .replaceAll(">", "&gt;");
+
+      const ensureMermaidInitialized = () => {
+        if (mermaidInitialized || !window.mermaid) return;
+
+        window.mermaid.initialize({
+          startOnLoad: false,
+          securityLevel: "strict",
+          theme: "default"
+        });
+        mermaidInitialized = true;
+      };
+
+      const renderMermaidDiagrams = async () => {
+        ensureMermaidInitialized();
+        if (!window.mermaid) return;
+
+        const blocks = document.querySelectorAll(".mermaid-block");
+        for (const [index, block] of blocks.entries()) {
+          const statusNode = block.querySelector(".mermaid-block__status");
+          const sourceNode = block.querySelector(".mermaid-block__source");
+          const diagramNode = block.querySelector(".mermaid-block__diagram");
+          const source = sourceNode?.textContent || "";
+
+          if (!diagramNode) continue;
+
+          diagramNode.innerHTML = "";
+          if (statusNode) {
+            statusNode.textContent = "Rendering diagram...";
+            statusNode.classList.remove("hidden");
+          }
+
+          try {
+            const { svg } = await window.mermaid.render(
+              `mermaid-diagram-${index}-${Date.now()}`,
+              source
+            );
+            diagramNode.innerHTML = svg;
+            statusNode?.classList.add("hidden");
+          } catch (error) {
+            const message =
+              error && typeof error === "object" && "message" in error
+                ? String(error.message)
+                : String(error || "Unknown Mermaid error");
+            if (statusNode) {
+              statusNode.textContent = "Mermaid render failed.";
+              statusNode.classList.remove("hidden");
+            }
+            diagramNode.innerHTML =
+              `<pre class="mermaid-block__error">${escapeHtml(message)}\n\n${escapeHtml(source)}</pre>`;
+          }
+        }
+      };
+
       aboutClose.addEventListener("click", hideAbout);
       aboutOverlay.addEventListener("click", (event) => {
         if (event.target === aboutOverlay) hideAbout();
@@ -1314,12 +1828,14 @@ fn app_shell_html() -> &'static str {
         editor.value = payload.markdown;
         updateEditorLineNumbers();
         syncEditorScroll();
+        void renderMermaidDiagrams();
       };
 
       window.updateDocumentState = (payload) => {
         applyDocumentChrome(payload);
         if (payload.mode === "readonly") {
           content.innerHTML = payload.html;
+          void renderMermaidDiagrams();
         }
       };
 
@@ -1334,16 +1850,16 @@ fn app_shell_html() -> &'static str {
         aboutCopy.textContent = "Copy";
         aboutOverlay.classList.remove("hidden");
       };
+
+      window.ipc.postMessage(JSON.stringify({ kind: "shell-ready" }));
     </script>
   </body>
 </html>
-"##
-}
+"##;
 
 #[cfg(target_os = "macos")]
 mod macos_menu {
     use std::error::Error;
-
     use objc2::rc::Retained;
     use objc2::runtime::AnyObject;
     use objc2::{DefinedClass, MainThreadOnly, define_class, sel};
@@ -1354,49 +1870,60 @@ mod macos_menu {
     use super::UserEvent;
 
     #[derive(Debug)]
-    struct MenuTargetIvars {
+    struct ProxyIvars {
         proxy: EventLoopProxy<UserEvent>,
     }
 
     define_class!(
         #[unsafe(super = NSObject)]
         #[thread_kind = MainThreadOnly]
-        #[ivars = MenuTargetIvars]
+        #[ivars = ProxyIvars]
         struct MenuTarget;
 
-        unsafe impl NSObjectProtocol for MenuTarget {}
+    unsafe impl NSObjectProtocol for MenuTarget {}
 
         impl MenuTarget {
             #[unsafe(method(openMenuDocument:))]
             fn open_menu_document(&self, _sender: Option<&AnyObject>) {
-                let _ = self.ivars().proxy.send_event(UserEvent::OpenFile);
+                let ctx = super::new_action_context("macos-menu-open");
+                super::log_event(
+                    "macos.menu.action",
+                    Some(ctx.event_id),
+                    "macOS menu action openMenuDocument:",
+                    "",
+                );
+                super::dispatch_user_event(&self.ivars().proxy, "macos-menu", UserEvent::OpenFile(ctx));
             }
 
             #[unsafe(method(saveMenuDocument:))]
             fn save_menu_document(&self, _sender: Option<&AnyObject>) {
-                let _ = self.ivars().proxy.send_event(UserEvent::SaveDocument);
+                super::log_event("macos.menu.action", None, "macOS menu action saveMenuDocument:", "");
+                super::dispatch_user_event(&self.ivars().proxy, "macos-menu", UserEvent::SaveDocument);
             }
 
             #[unsafe(method(toggleDocumentMode:))]
             fn toggle_document_mode(&self, _sender: Option<&AnyObject>) {
-                let _ = self.ivars().proxy.send_event(UserEvent::ToggleMode);
+                super::log_event("macos.menu.action", None, "macOS menu action toggleDocumentMode:", "");
+                super::dispatch_user_event(&self.ivars().proxy, "macos-menu", UserEvent::ToggleMode);
             }
 
             #[unsafe(method(showAboutPanel:))]
             fn show_about_panel(&self, _sender: Option<&AnyObject>) {
-                let _ = self.ivars().proxy.send_event(UserEvent::ShowAbout);
+                super::log_event("macos.menu.action", None, "macOS menu action showAboutPanel:", "");
+                super::dispatch_user_event(&self.ivars().proxy, "macos-menu", UserEvent::ShowAbout);
             }
 
             #[unsafe(method(exitApplication:))]
             fn exit_application(&self, _sender: Option<&AnyObject>) {
-                let _ = self.ivars().proxy.send_event(UserEvent::Exit);
+                super::log_event("macos.menu.action", None, "macOS menu action exitApplication:", "");
+                super::dispatch_user_event(&self.ivars().proxy, "macos-menu", UserEvent::Exit);
             }
         }
     );
 
     impl MenuTarget {
         fn new(mtm: MainThreadMarker, proxy: EventLoopProxy<UserEvent>) -> Retained<Self> {
-            let this = Self::alloc(mtm).set_ivars(MenuTargetIvars { proxy });
+            let this = Self::alloc(mtm).set_ivars(ProxyIvars { proxy });
             unsafe { objc2::msg_send![super(this), init] }
         }
     }
@@ -1404,7 +1931,9 @@ mod macos_menu {
     pub fn install(proxy: &EventLoopProxy<UserEvent>) -> Result<(), Box<dyn Error>> {
         let mtm = MainThreadMarker::new().ok_or("menu setup must run on main thread")?;
         let app = NSApplication::sharedApplication(mtm);
-        let target = MenuTarget::new(mtm, proxy.clone());
+        // AppKit menu targets and delegates are not retained for us here,
+        // so keep them alive for the app lifetime.
+        let target = Box::leak(Box::new(MenuTarget::new(mtm, proxy.clone())));
 
         let main_menu = NSMenu::initWithTitle(NSMenu::alloc(mtm), ns_string!("MainMenu"));
 
@@ -1427,7 +1956,7 @@ mod macos_menu {
                 ns_string!(""),
             )
         };
-        unsafe { about_item.setTarget(Some((&*target).as_ref())) };
+        unsafe { about_item.setTarget(Some((&**target).as_ref())) };
         app_menu.addItem(&about_item);
         app_menu.addItem(&NSMenuItem::separatorItem(mtm));
         let quit_item = unsafe {
@@ -1438,7 +1967,7 @@ mod macos_menu {
                 ns_string!("q"),
             )
         };
-        unsafe { quit_item.setTarget(Some((&*target).as_ref())) };
+        unsafe { quit_item.setTarget(Some((&**target).as_ref())) };
         quit_item.setKeyEquivalentModifierMask(NSEventModifierFlags::Command);
         app_menu.addItem(&quit_item);
         app_menu_item.setSubmenu(Some(&app_menu));
@@ -1462,7 +1991,7 @@ mod macos_menu {
                 ns_string!("o"),
             )
         };
-        unsafe { open_item.setTarget(Some((&*target).as_ref())) };
+        unsafe { open_item.setTarget(Some((&**target).as_ref())) };
         open_item.setKeyEquivalentModifierMask(NSEventModifierFlags::Command);
         file_menu.addItem(&open_item);
 
@@ -1474,7 +2003,7 @@ mod macos_menu {
                 ns_string!("s"),
             )
         };
-        unsafe { save_item.setTarget(Some((&*target).as_ref())) };
+        unsafe { save_item.setTarget(Some((&**target).as_ref())) };
         save_item.setKeyEquivalentModifierMask(NSEventModifierFlags::Command);
         file_menu.addItem(&save_item);
 
@@ -1486,7 +2015,7 @@ mod macos_menu {
                 ns_string!("/"),
             )
         };
-        unsafe { toggle_item.setTarget(Some((&*target).as_ref())) };
+        unsafe { toggle_item.setTarget(Some((&**target).as_ref())) };
         toggle_item.setKeyEquivalentModifierMask(NSEventModifierFlags::Command);
         file_menu.addItem(&toggle_item);
 
@@ -1499,7 +2028,7 @@ mod macos_menu {
                 ns_string!("q"),
             )
         };
-        unsafe { exit_item.setTarget(Some((&*target).as_ref())) };
+        unsafe { exit_item.setTarget(Some((&**target).as_ref())) };
         exit_item.setKeyEquivalentModifierMask(NSEventModifierFlags::Command);
         file_menu.addItem(&exit_item);
         file_menu_item.setSubmenu(Some(&file_menu));
@@ -1591,7 +2120,6 @@ mod macos_menu {
         app.setMainMenu(Some(&main_menu));
 
         let _ = NSApp(mtm);
-        std::mem::forget(target);
         Ok(())
     }
 }

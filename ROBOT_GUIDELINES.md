@@ -55,13 +55,22 @@ Commit messages should:
 When implementing a new feature or a user-requested change in this repository, follow this workflow:
 
 1. Confirm the current development version before making changes.
-2. If the user directly requests a feature, record or update that feature in `PLAN.MD`.
-3. Implement the feature in the smallest complete scope that satisfies the request.
-4. Run the existing validation command for the affected code path.
-5. Generate the DMG package after the implementation is complete.
-6. Commit the work incrementally by feature with English one-sentence commit messages.
+2. Judge the scope of the requested change before assigning the next version:
+   - if the work is a bug fix or an improvement to an existing feature, increase the last version number by `+1`
+   - if the work is a new feature that did not exist before, increase the middle version number by `+1`
+3. If the user directly requests a feature, record or update that feature in `PLAN.MD` under the target version before implementation.
+4. Write a technical design document for that feature before coding.
+5. After the user accepts the technical design direction, refine the design document and add or update the relevant test cases.
+6. For user-visible features, also add or update a matching example Markdown file under `examples/` so users can verify the new capability after installing the new version.
+7. Start development only after the user confirms the design, tests, and example direction is OK.
+8. Implement the feature in the smallest complete scope that satisfies the confirmed design.
+9. Run the existing validation command for the affected code path.
+10. Generate the DMG package after the implementation is complete.
+11. When the user explicitly says `提交xxx版本`, commit the important milestones incrementally with English one-sentence commit messages.
+12. Use the final release commit for that version as the tag target, and create a Git tag named `v版本号`.
 
 For version tracking:
 
 - always keep the current development version aligned across implementation-related files
 - do not add feature work without making sure the target version is clear in the plan
+- keep `PLAN.MD`, technical design notes, tests, example files, implementation status, and release tag consistent with the same target version
