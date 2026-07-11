@@ -65,12 +65,13 @@ When implementing a new feature or a user-requested change in this repository, f
 7. Start development only after the user confirms the design, tests, and example direction is OK.
 8. Implement the feature in the smallest complete scope that satisfies the confirmed design.
 9. Run the existing validation command for the affected code path.
-10. Generate the DMG package after the implementation is complete.
-11. When the user explicitly says `提交xxx版本`, commit the important milestones incrementally with English one-sentence commit messages.
-12. Use the final release commit for that version as the tag target, and create a Git tag named `v版本号`.
+10. Update `README.md` so the documented version and user-visible features match the target release.
+11. Generate the DMG package after the implementation is complete.
+12. When the user explicitly says `提交xxx版本`, commit the important milestones incrementally with English one-sentence commit messages.
+13. Use the final release commit for that version as the tag target, and create a Git tag named `v版本号`.
 
 For version tracking:
 
 - always keep the current development version aligned across implementation-related files
 - do not add feature work without making sure the target version is clear in the plan
-- keep `PLAN.MD`, technical design notes, tests, example files, implementation status, and release tag consistent with the same target version
+- keep `PLAN.MD`, `README.md`, technical design notes, tests, example files, implementation status, and release tag consistent with the same target version
