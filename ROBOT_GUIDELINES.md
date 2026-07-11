@@ -50,7 +50,15 @@ Commit messages should:
 - be a single sentence
 - summarize the change clearly and directly
 
-## 7. Follow the Standard Delivery Flow
+## 7. Respect `.gitignore`
+
+Do not commit files or directories that are already ignored by `.gitignore`.
+
+Before creating a commit, confirm that ignored build outputs, packaging artifacts, caches, local notes, and other excluded paths are not staged.
+
+If a path is meant to stay out of version control, keep it untracked unless the user explicitly asks to change the ignore rule first.
+
+## 8. Follow the Standard Delivery Flow
 
 When implementing a new feature or a user-requested change in this repository, follow this workflow:
 

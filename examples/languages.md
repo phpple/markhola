@@ -43,7 +43,7 @@ type Release = {
 };
 
 const current: Release = {
-  version: "0.6.3",
+  version: "0.7.0",
   features: ["highlighting", "mermaid", "finder-open"]
 };
 ```
@@ -148,7 +148,7 @@ done
 ```json
 {
   "name": "markhola",
-  "version": "0.6.3",
+  "version": "0.7.0",
   "features": ["readonly", "writable", "mermaid", "finder-open"]
 }
 ```
@@ -197,7 +197,7 @@ ORDER BY version DESC;
 ## XML
 
 ```xml
-<release version="0.6.3">
+<release version="0.7.0">
   <feature>Mermaid</feature>
   <feature>FinderOpen</feature>
 </release>

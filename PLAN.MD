@@ -56,6 +56,21 @@ This is another markdown reader and exporter software.Written by AI, free are th
    - Keep raw math source editable in writable mode
 
 ### v0.7.0
+1. Multiple Markdown documents in one app window
+   - Open and keep multiple Markdown documents at the same time
+   - Switch between opened documents without losing readonly or writable state
+   - Preserve unsaved changes per document while switching tabs
+   - Allow closing the current document tab and keeping the app running when other tabs remain
+2. Theme directory for app shell styling
+   - Move the page shell CSS into a `themes/` directory
+   - Load the default theme from a directly editable CSS file at runtime
+   - Package the same theme into the macOS app bundle resources
+3. Release regression validation flow
+   - Add a reusable automated regression script for release validation
+   - Freeze a manual regression checklist for user-visible behaviors
+   - Add example-based regression tests so core rendering features are less likely to drift
+
+### v0.7.1
 1. Support for Exporting PDF
 
 ### v1.0.0

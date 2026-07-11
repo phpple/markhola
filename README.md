@@ -4,12 +4,14 @@ MarkHola is a lightweight desktop Markdown reader and editor built with Rust for
 
 ## Current Version
 
-- `v0.6.3`
+- `v0.7.0`
 
 ## Features
 
 - Readonly and writable modes with `Command + /` mode switching
 - Open local `.md` and `.markdown` files
+- Open and keep multiple Markdown documents in one window
+- Load the app shell theme from an editable `themes/default/layout.css` file
 - Save the current document with `Command + S`
 - Render headings, links, images, tables, lists, blockquotes, and code blocks
 - Syntax-highlighted fenced code blocks in readonly mode
@@ -24,6 +26,7 @@ MarkHola is a lightweight desktop Markdown reader and editor built with Rust for
   - `Command + Z / R` undo and redo
   - `Ctrl + A / E` move to line start and line end
   - `Tab / Shift + Tab` indent and outdent, including multi-line selections
+- `Command + W` close the current document tab
 - Drag and drop files into the window
 - Open Markdown files from Finder on macOS
 - Open external links in the default browser
@@ -49,6 +52,18 @@ Run tests:
 cargo test
 ```
 
+Run release regression checks:
+
+```bash
+./scripts/release_regression.sh
+```
+
+Run release regression checks with packaging:
+
+```bash
+./scripts/release_regression.sh --with-package
+```
+
 Build the app:
 
 ```bash
@@ -68,6 +83,7 @@ Create the macOS app bundle and DMG:
 - `assets/`: logo and icon sources
 - `examples/`: sample Markdown files for manual verification
 - `scripts/`: packaging scripts
+- `themes/`: directly editable app theme files
 - `tech-notes/`: technical design notes
 
 ## GitHub

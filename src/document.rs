@@ -29,7 +29,9 @@ impl DocumentMode {
 
 #[derive(Clone, Debug)]
 pub struct ActiveDocument {
+    id: u64,
     file_path: PathBuf,
+    canonical_path: PathBuf,
     file_name: String,
     title: String,
     markdown: String,
@@ -44,6 +46,7 @@ pub struct ActiveDocument {
 
 #[derive(Clone, Debug, Serialize)]
 pub struct DocumentSnapshot {
+    pub document_id: u64,
     pub file_name: String,
     pub file_path: String,
     pub title: String,
@@ -58,15 +61,28 @@ pub struct DocumentSnapshot {
     pub save_status: &'static str,
 }
 
+#[derive(Clone, Debug, Serialize)]
+pub struct DocumentTabSnapshot {
+    pub document_id: u64,
+    pub file_name: String,
+    pub title: String,
+    pub dirty: bool,
+    pub active: bool,
+    pub mode: DocumentMode,
+}
+
 impl ActiveDocument {
-    pub fn open(path: PathBuf, markdown: String, base_url: String) -> Self {
+    pub fn open_with_id(id: u64, path: PathBuf, markdown: String, base_url: String) -> Self {
         let file_name = file_name(&path).unwrap_or_else(|| "Untitled".to_string());
+        let canonical_path = std::fs::canonicalize(&path).unwrap_or_else(|_| path.clone());
         let title = markdown::extract_title(&markdown).unwrap_or_else(|| file_name.clone());
         let html = markdown::render_html(&markdown);
         let (word_count, line_count) = text_metrics(&markdown);
 
         Self {
+            id,
             file_path: path,
+            canonical_path,
             file_name,
             title,
             saved_markdown: markdown.clone(),
@@ -82,6 +98,7 @@ impl ActiveDocument {
 
     pub fn snapshot(&self) -> DocumentSnapshot {
         DocumentSnapshot {
+            document_id: self.id,
             file_name: self.file_name.clone(),
             file_path: self.file_path.display().to_string(),
             title: self.title.clone(),
@@ -97,8 +114,27 @@ impl ActiveDocument {
         }
     }
 
+    pub fn tab_snapshot(&self, active: bool) -> DocumentTabSnapshot {
+        DocumentTabSnapshot {
+            document_id: self.id,
+            file_name: self.file_name.clone(),
+            title: self.title.clone(),
+            dirty: self.dirty,
+            active,
+            mode: self.mode,
+        }
+    }
+
+    pub fn id(&self) -> u64 {
+        self.id
+    }
+
     pub fn file_path(&self) -> &Path {
         &self.file_path
+    }
+
+    pub fn canonical_path(&self) -> &Path {
+        &self.canonical_path
     }
 
     pub fn file_name(&self) -> &str {
@@ -172,7 +208,8 @@ mod tests {
 
     #[test]
     fn switching_to_readonly_rerenders_preview() {
-        let mut document = ActiveDocument::open(
+        let mut document = ActiveDocument::open_with_id(
+            1,
             PathBuf::from("/tmp/demo.md"),
             "# Hello\nworld".to_string(),
             "file:///tmp/".to_string(),
@@ -192,7 +229,8 @@ mod tests {
 
     #[test]
     fn dirty_state_clears_after_save() {
-        let mut document = ActiveDocument::open(
+        let mut document = ActiveDocument::open_with_id(
+            1,
             PathBuf::from("/tmp/demo.md"),
             "# Hello".to_string(),
             "file:///tmp/".to_string(),
