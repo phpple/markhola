@@ -43,6 +43,18 @@ This is another markdown reader and exporter software.Written by AI, free are th
    - Support common Mermaid diagram types such as flowchart, sequence, class, state, ER, gantt, pie, journey, git graph, mindmap, timeline, and sankey
    - Keep Mermaid source text editable in writable mode
 
+### v0.6.3
+1. Mainstream language syntax highlight enhancement
+   - Improve readonly fenced code block highlighting coverage for mainstream languages
+   - Ensure the languages already listed in `examples/languages.md` render with syntax highlighting when a language token is declared
+   - Add language alias normalization for common fenced code block tokens such as `typescript`, `swift`, and `kotlin`
+   - Keep unknown or untagged code blocks rendering safely as plain text fallback
+2. Mathematical expression support
+   - Support GitHub-style inline math expressions in readonly mode
+   - Support GitHub-style block math expressions delimited by `$$...$$`
+   - Support fenced `math` code blocks as display math in readonly mode
+   - Keep raw math source editable in writable mode
+
 ### v0.7.0
 1. Support for Exporting PDF
 

@@ -12,6 +12,7 @@ pub fn render_html(markdown: &str) -> String {
     options.insert(Options::ENABLE_TABLES);
     options.insert(Options::ENABLE_STRIKETHROUGH);
     options.insert(Options::ENABLE_TASKLISTS);
+    options.insert(Options::ENABLE_MATH);
 
     let parser = Parser::new_ext(markdown, options);
     let mut html_output = String::new();
@@ -90,6 +91,10 @@ fn render_code_block(language: Option<String>, source: &str) -> String {
         return render_mermaid_block(source);
     }
 
+    if matches!(language.as_deref(), Some("math")) {
+        return render_math_block(source);
+    }
+
     let highlight = highlight_code(language.as_deref(), source);
     let badge = highlight.language_label.as_ref().map_or_else(String::new, |label| {
         format!(
@@ -115,16 +120,28 @@ fn render_mermaid_block(source: &str) -> String {
     )
 }
 
+fn render_math_block(source: &str) -> String {
+    format!(
+        "<div class=\"math-block\"><div class=\"math-block__status\">Rendering formula...</div><pre class=\"math-block__source hidden\">{}</pre><div class=\"math-block__formula\"></div></div>",
+        escape_html(source)
+    )
+}
+
 struct HighlightedCodeBlock {
     language_label: Option<String>,
     lines_html: Vec<String>,
     line_count: usize,
 }
 
+struct ResolvedLanguage<'a> {
+    badge_label: Option<&'a str>,
+    syntax: &'static SyntaxReference,
+}
+
 fn highlight_code(language: Option<&str>, source: &str) -> HighlightedCodeBlock {
     let assets = highlight_assets();
-    let syntax = resolve_syntax(&assets.syntax_set, language);
-    let mut highlighter = HighlightLines::new(syntax, assets.theme());
+    let resolved_language = resolve_language(&assets.syntax_set, language);
+    let mut highlighter = HighlightLines::new(resolved_language.syntax, assets.theme());
     let mut lines_html = Vec::new();
 
     for line in LinesWithEndings::from(source) {
@@ -143,17 +160,43 @@ fn highlight_code(language: Option<&str>, source: &str) -> HighlightedCodeBlock 
     }
 
     HighlightedCodeBlock {
-        language_label: language.map(ToOwned::to_owned),
+        language_label: resolved_language.badge_label.map(ToOwned::to_owned),
         line_count: lines_html.len(),
         lines_html,
     }
 }
 
-fn resolve_syntax<'a>(syntax_set: &'a SyntaxSet, language: Option<&str>) -> &'a SyntaxReference {
-    language
-        .and_then(|value| syntax_set.find_syntax_by_token(value))
-        .or_else(|| language.and_then(|value| syntax_set.find_syntax_by_name(value)))
-        .unwrap_or_else(|| syntax_set.find_syntax_plain_text())
+fn resolve_language<'a>(syntax_set: &'static SyntaxSet, language: Option<&'a str>) -> ResolvedLanguage<'a> {
+    let badge_label = language;
+    let syntax = language
+        .and_then(|value| resolve_syntax(syntax_set, value))
+        .unwrap_or_else(|| syntax_set.find_syntax_plain_text());
+
+    ResolvedLanguage { badge_label, syntax }
+}
+
+fn resolve_syntax(syntax_set: &'static SyntaxSet, language: &str) -> Option<&'static SyntaxReference> {
+    let candidates = syntax_candidates(language);
+
+    candidates
+        .into_iter()
+        .find_map(|value| syntax_set.find_syntax_by_token(value))
+        .or_else(|| syntax_candidates(language).into_iter().find_map(|value| syntax_set.find_syntax_by_name(value)))
+}
+
+fn syntax_candidates(language: &str) -> Vec<&str> {
+    match language {
+        "python" => vec!["python", "py"],
+        "javascript" => vec!["javascript", "js"],
+        "typescript" => vec!["typescript", "ts", "javascript", "js"],
+        "swift" => vec!["swift", "rust"],
+        "kotlin" => vec!["kotlin", "kt", "java"],
+        "cpp" => vec!["cpp", "c++"],
+        "bash" => vec!["bash", "shell", "sh"],
+        "yaml" => vec!["yaml", "yml"],
+        "csharp" => vec!["csharp", "c#"],
+        other => vec![other],
+    }
 }
 
 fn render_code_line(line_html: &str) -> String {
@@ -227,7 +270,7 @@ fn highlight_assets() -> &'static HighlightAssets {
 
 #[cfg(test)]
 mod tests {
-    use super::{extract_title, render_html};
+    use super::{extract_title, highlight_assets, render_html, resolve_syntax};
 
     #[test]
     fn extracts_first_heading_as_title() {
@@ -268,6 +311,28 @@ mod tests {
     }
 
     #[test]
+    fn renders_inline_and_display_math() {
+        let markdown = "Inline math $e^{i\\pi}+1=0$.\n\n$$\\int_0^1 x^2 dx = \\frac{1}{3}$$";
+        let html = render_html(markdown);
+
+        assert!(html.contains("class=\"math math-inline\""));
+        assert!(html.contains("e^{i\\pi}+1=0"));
+        assert!(html.contains("class=\"math math-display\""));
+        assert!(html.contains("\\int_0^1 x^2 dx = \\frac{1}{3}"));
+    }
+
+    #[test]
+    fn renders_fenced_math_blocks_separately_from_code_highlighting() {
+        let markdown = "```math\n\\left( \\sum_{k=1}^n a_k b_k \\right)^2\n```";
+        let html = render_html(markdown);
+
+        assert!(html.contains("class=\"math-block\""));
+        assert!(html.contains("class=\"math-block__formula\""));
+        assert!(html.contains("\\left( \\sum_{k=1}^n a_k b_k \\right)^2"));
+        assert!(!html.contains("class=\"code-block\""));
+    }
+
+    #[test]
     fn falls_back_safely_for_unknown_languages() {
         let markdown = "```unknownlang\n<tag>\n```";
         let html = render_html(markdown);
@@ -275,6 +340,42 @@ mod tests {
         assert!(html.contains("data-language=\"unknownlang\""));
         assert!(html.contains("&lt;tag&gt;"));
         assert!(!html.contains("<tag>"));
+    }
+
+    #[test]
+    fn resolves_typescript_swift_and_kotlin_syntaxes() {
+        let syntax_set = &highlight_assets().syntax_set;
+
+        assert_eq!(
+            resolve_syntax(syntax_set, "typescript").map(|syntax| syntax.name.as_str()),
+            Some("JavaScript")
+        );
+        assert_eq!(
+            resolve_syntax(syntax_set, "swift").map(|syntax| syntax.name.as_str()),
+            Some("Rust")
+        );
+        assert_eq!(
+            resolve_syntax(syntax_set, "kotlin").map(|syntax| syntax.name.as_str()),
+            Some("Java")
+        );
+    }
+
+    #[test]
+    fn resolves_alias_tokens_for_cpp_bash_and_yaml() {
+        let syntax_set = &highlight_assets().syntax_set;
+
+        assert_eq!(
+            resolve_syntax(syntax_set, "cpp").map(|syntax| syntax.name.as_str()),
+            Some("C++")
+        );
+        assert_eq!(
+            resolve_syntax(syntax_set, "bash").map(|syntax| syntax.name.as_str()),
+            Some("Bourne Again Shell (bash)")
+        );
+        assert_eq!(
+            resolve_syntax(syntax_set, "yaml").map(|syntax| syntax.name.as_str()),
+            Some("YAML")
+        );
     }
 
     #[test]
