@@ -37,6 +37,12 @@ This is another markdown reader and exporter software.Written by AI, free are th
 3. Writable editor line numbers
   - Display line numbers at the left side while editing Markdown
 
+### v0.6.2
+1. Mermaid diagram support
+   - Render Mermaid fenced code blocks in readonly mode
+   - Support common Mermaid diagram types such as flowchart, sequence, class, state, ER, gantt, pie, journey, git graph, mindmap, timeline, and sankey
+   - Keep Mermaid source text editable in writable mode
+
 ### v0.7.0
 1. Support for Exporting PDF
 

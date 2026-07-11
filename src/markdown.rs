@@ -86,6 +86,10 @@ fn code_block_language(kind: &CodeBlockKind<'_>) -> Option<String> {
 }
 
 fn render_code_block(language: Option<String>, source: &str) -> String {
+    if matches!(language.as_deref(), Some("mermaid")) {
+        return render_mermaid_block(source);
+    }
+
     let highlight = highlight_code(language.as_deref(), source);
     let badge = highlight.language_label.as_ref().map_or_else(String::new, |label| {
         format!(
@@ -101,6 +105,13 @@ fn render_code_block(language: Option<String>, source: &str) -> String {
     format!(
         "<div class=\"code-block\"{language_attribute}>{badge}<div class=\"code-block__body\"><div class=\"code-block__line-numbers\" aria-hidden=\"true\">{line_numbers}</div><pre class=\"code-block__pre\"><code class=\"code-block__code\">{}</code></pre></div></div>",
         highlight.lines_html.join("")
+    )
+}
+
+fn render_mermaid_block(source: &str) -> String {
+    format!(
+        "<div class=\"mermaid-block\"><div class=\"mermaid-block__status\">Rendering diagram...</div><pre class=\"mermaid-block__source hidden\">{}</pre><div class=\"mermaid-block__diagram\"></div></div>",
+        escape_html(source)
     )
 }
 
@@ -243,6 +254,17 @@ mod tests {
         assert!(html.contains("class=\"code-block__line-number\">1</span>"));
         assert!(html.contains("class=\"code-block__line-number\">3</span>"));
         assert!(html.contains("style=\""));
+    }
+
+    #[test]
+    fn renders_mermaid_blocks_separately_from_code_highlighting() {
+        let markdown = "```mermaid\nflowchart TD\nA --> B\n```";
+        let html = render_html(markdown);
+
+        assert!(html.contains("class=\"mermaid-block\""));
+        assert!(html.contains("class=\"mermaid-block__diagram\""));
+        assert!(html.contains("flowchart TD"));
+        assert!(!html.contains("class=\"code-block\""));
     }
 
     #[test]
