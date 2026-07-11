@@ -4,7 +4,7 @@ MarkHola is a lightweight desktop Markdown reader and editor built with Rust for
 
 ## Current Version
 
-- `v0.6.2`
+- `v0.6.3`
 
 ## Features
 
@@ -13,6 +13,8 @@ MarkHola is a lightweight desktop Markdown reader and editor built with Rust for
 - Save the current document with `Command + S`
 - Render headings, links, images, tables, lists, blockquotes, and code blocks
 - Syntax-highlighted fenced code blocks in readonly mode
+- Improved mainstream language highlight coverage for fenced code blocks
+- Mathematical expressions in readonly mode, including inline math, `$$...$$`, and fenced `math` blocks
 - Code block line numbers and hover language badges in readonly mode
 - Render Mermaid fenced code blocks in readonly mode
 - Writable editor line numbers

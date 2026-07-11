@@ -27,6 +27,7 @@ const APP_GITHUB_URL: &str = "https://github.com/phpple/markhola";
 const APP_BUILD_TARGET: &str = std::env::consts::ARCH;
 const APP_BUILD_PLATFORM: &str = std::env::consts::OS;
 const MERMAID_RUNTIME: &str = include_str!("../assets/mermaid/mermaid.min.js");
+const MATHJAX_RUNTIME: &str = include_str!("../assets/mathjax/tex-svg-full.js");
 const DEBUG_LOG_DIR: &str = "/var/log/markhola";
 const DEBUG_LOG_FALLBACK_PATH: &str = "/tmp/markhola.log";
 static NEXT_EVENT_ID: AtomicU64 = AtomicU64::new(1);
@@ -402,6 +403,10 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
                                 log_event("keyboard.shortcut", None, "keyboard shortcut triggered", "key=Command+S");
                                 dispatch_user_event(&proxy, "keyboard", UserEvent::SaveDocument);
                             }
+                            KeyCode::KeyW => {
+                                log_event("keyboard.shortcut", None, "keyboard shortcut triggered", "key=Command+W");
+                                dispatch_user_event(&proxy, "keyboard", UserEvent::Exit);
+                            }
                             KeyCode::Slash => {
                                 log_event("keyboard.shortcut", None, "keyboard shortcut triggered", "key=Command+/");
                                 dispatch_user_event(&proxy, "keyboard", UserEvent::ToggleMode);
@@ -594,6 +599,9 @@ fn handle_ipc_message(proxy: &EventLoopProxy<UserEvent>, payload: String) {
         }
         Some("request-save") => {
             dispatch_user_event(proxy, "ipc", UserEvent::SaveDocument);
+        }
+        Some("request-exit") => {
+            dispatch_user_event(proxy, "ipc", UserEvent::Exit);
         }
         Some("editor-changed") => {
             if let Some(markdown) = value.get("markdown").and_then(Value::as_str) {
@@ -799,7 +807,7 @@ fn render_status(webview: &WebView, message: &str, level: &str) {
 fn render_about(webview: &WebView) {
     let script = format!(
         "window.showAbout({{version:{}, author:{}, githubUrl:{}, buildTarget:{}, buildPlatform:{}}});",
-        serde_json::to_string(APP_VERSION).unwrap_or_else(|_| "\"0.6.2\"".to_string()),
+        serde_json::to_string(APP_VERSION).unwrap_or_else(|_| "\"0.6.3\"".to_string()),
         serde_json::to_string(APP_AUTHOR).unwrap_or_else(|_| "\"Ronnie Deng\"".to_string()),
         serde_json::to_string(APP_GITHUB_URL)
             .unwrap_or_else(|_| "\"https://github.com/phpple/markhola\"".to_string()),
@@ -810,11 +818,17 @@ fn render_about(webview: &WebView) {
 }
 
 fn app_shell_html() -> String {
-    APP_SHELL_HTML.replace("__MERMAID_RUNTIME__", &mermaid_runtime_script())
+    APP_SHELL_HTML
+        .replace("__MERMAID_RUNTIME__", &mermaid_runtime_script())
+        .replace("__MATHJAX_RUNTIME__", &mathjax_runtime_script())
 }
 
 fn mermaid_runtime_script() -> String {
     MERMAID_RUNTIME.replace("</script", "<\\/script")
+}
+
+fn mathjax_runtime_script() -> String {
+    MATHJAX_RUNTIME.replace("</script", "<\\/script")
 }
 
 const APP_SHELL_HTML: &str = r##"<!DOCTYPE html>
@@ -1238,6 +1252,58 @@ const APP_SHELL_HTML: &str = r##"<!DOCTYPE html>
         white-space: pre-wrap;
       }
 
+      .markdown-body .math.math-inline {
+        display: inline-flex;
+        align-items: center;
+        vertical-align: middle;
+        max-width: 100%;
+      }
+
+      .markdown-body .math.math-display {
+        display: block;
+        margin: 1.25em 0;
+        overflow-x: auto;
+        overflow-y: hidden;
+        text-align: center;
+      }
+
+      .markdown-body .math svg,
+      .markdown-body .math-block__formula svg {
+        display: inline-block;
+        max-width: 100%;
+        height: auto;
+      }
+
+      .markdown-body .math-block {
+        margin: 1.2em 0;
+        border-radius: 18px;
+        background: rgba(255, 255, 255, 0.9);
+        border: 1px solid rgba(92, 74, 52, 0.12);
+        box-shadow: 0 12px 34px rgba(56, 41, 28, 0.08);
+        overflow-x: auto;
+      }
+
+      .markdown-body .math-block__status {
+        padding: 12px 16px 0;
+        color: var(--muted);
+        font: 12px/1.4 var(--font-ui);
+      }
+
+      .markdown-body .math-block__formula {
+        min-width: min-content;
+        padding: 10px 16px 16px;
+        text-align: center;
+      }
+
+      .markdown-body .math-block__error {
+        margin: 0;
+        padding: 12px 16px 16px;
+        color: #8b1e1e;
+        font: 13px/1.6 var(--font-code);
+        white-space: pre-wrap;
+        text-align: left;
+      }
+
       .markdown-body blockquote {
         padding: 2px 0 2px 18px;
         border-left: 4px solid rgba(15, 118, 110, 0.3);
@@ -1464,7 +1530,7 @@ const APP_SHELL_HTML: &str = r##"<!DOCTYPE html>
         <div class="about-meta">
           <div class="about-meta-row">
             <strong>Version</strong>
-            <span class="about-value" id="aboutVersion">0.6.2</span>
+            <span class="about-value" id="aboutVersion">0.6.3</span>
             <span></span>
           </div>
           <div class="about-meta-row">
@@ -1487,7 +1553,14 @@ const APP_SHELL_HTML: &str = r##"<!DOCTYPE html>
       </div>
     </div>
 
+    <script>
+      window.MathJax = {
+        startup: { typeset: false },
+        svg: { fontCache: "none" }
+      };
+    </script>
     <script>__MERMAID_RUNTIME__</script>
+    <script>__MATHJAX_RUNTIME__</script>
     <script>
       const status = document.getElementById("status");
       const documentTitle = document.getElementById("documentTitle");
@@ -1512,6 +1585,7 @@ const APP_SHELL_HTML: &str = r##"<!DOCTYPE html>
       const aboutGithub = document.getElementById("aboutGithub");
       const aboutCopy = document.getElementById("aboutCopy");
       let mermaidInitialized = false;
+      let mathJaxReadyPromise = null;
 
       const hideAbout = () => {
         aboutOverlay.classList.add("hidden");
@@ -1708,6 +1782,85 @@ const APP_SHELL_HTML: &str = r##"<!DOCTYPE html>
         }
       };
 
+      const ensureMathJaxReady = () => {
+        if (!window.MathJax || !window.MathJax.startup) return null;
+        if (!mathJaxReadyPromise) {
+          mathJaxReadyPromise = window.MathJax.startup.promise;
+        }
+        return mathJaxReadyPromise;
+      };
+
+      const extractRenderedMathNode = (rendered) =>
+        rendered.querySelector("mjx-container") || rendered.firstElementChild || rendered;
+
+      const renderMathSource = async (node, source, display) => {
+        const ready = ensureMathJaxReady();
+        if (!ready) return false;
+
+        await ready;
+        const rendered = await window.MathJax.tex2svgPromise(source, { display });
+        const mathNode = extractRenderedMathNode(rendered);
+        node.replaceChildren(mathNode.cloneNode(true));
+        return true;
+      };
+
+      const renderMathExpressions = async () => {
+        if (!window.MathJax) return;
+
+        const mathNodes = content.querySelectorAll(".math.math-inline, .math.math-display");
+        for (const node of mathNodes) {
+          const source = node.textContent || "";
+          const display = node.classList.contains("math-display");
+
+          try {
+            await renderMathSource(node, source, display);
+          } catch (error) {
+            const message =
+              error && typeof error === "object" && "message" in error
+                ? String(error.message)
+                : String(error || "Unknown math error");
+            node.innerHTML = `<code>${escapeHtml(`Math render failed: ${message}\n\n${source}`)}</code>`;
+          }
+        }
+
+        const blocks = content.querySelectorAll(".math-block");
+        for (const block of blocks) {
+          const statusNode = block.querySelector(".math-block__status");
+          const sourceNode = block.querySelector(".math-block__source");
+          const formulaNode = block.querySelector(".math-block__formula");
+          const source = sourceNode?.textContent || "";
+
+          if (!formulaNode) continue;
+
+          formulaNode.innerHTML = "";
+          if (statusNode) {
+            statusNode.textContent = "Rendering formula...";
+            statusNode.classList.remove("hidden");
+          }
+
+          try {
+            await renderMathSource(formulaNode, source, true);
+            statusNode?.classList.add("hidden");
+          } catch (error) {
+            const message =
+              error && typeof error === "object" && "message" in error
+                ? String(error.message)
+                : String(error || "Unknown math error");
+            if (statusNode) {
+              statusNode.textContent = "Math render failed.";
+              statusNode.classList.remove("hidden");
+            }
+            formulaNode.innerHTML =
+              `<pre class="math-block__error">${escapeHtml(message)}\n\n${escapeHtml(source)}</pre>`;
+          }
+        }
+      };
+
+      const renderReadonlyEnhancements = async () => {
+        await renderMermaidDiagrams();
+        await renderMathExpressions();
+      };
+
       aboutClose.addEventListener("click", hideAbout);
       aboutOverlay.addEventListener("click", (event) => {
         if (event.target === aboutOverlay) hideAbout();
@@ -1783,6 +1936,9 @@ const APP_SHELL_HTML: &str = r##"<!DOCTYPE html>
         } else if (event.key.toLowerCase() === "s") {
           event.preventDefault();
           window.ipc.postMessage(JSON.stringify({ kind: "request-save" }));
+        } else if (event.key.toLowerCase() === "w") {
+          event.preventDefault();
+          window.ipc.postMessage(JSON.stringify({ kind: "request-exit" }));
         } else if (event.key.toLowerCase() === "a" && isWritableMode()) {
           event.preventDefault();
           selectAllEditorText();
@@ -1828,14 +1984,14 @@ const APP_SHELL_HTML: &str = r##"<!DOCTYPE html>
         editor.value = payload.markdown;
         updateEditorLineNumbers();
         syncEditorScroll();
-        void renderMermaidDiagrams();
+        void renderReadonlyEnhancements();
       };
 
       window.updateDocumentState = (payload) => {
         applyDocumentChrome(payload);
         if (payload.mode === "readonly") {
           content.innerHTML = payload.html;
-          void renderMermaidDiagrams();
+          void renderReadonlyEnhancements();
         }
       };
 
@@ -2020,6 +2176,18 @@ mod macos_menu {
         file_menu.addItem(&toggle_item);
 
         file_menu.addItem(&NSMenuItem::separatorItem(mtm));
+        let close_item = unsafe {
+            NSMenuItem::initWithTitle_action_keyEquivalent(
+                NSMenuItem::alloc(mtm),
+                ns_string!("Close"),
+                Some(sel!(exitApplication:)),
+                ns_string!("w"),
+            )
+        };
+        unsafe { close_item.setTarget(Some((&**target).as_ref())) };
+        close_item.setKeyEquivalentModifierMask(NSEventModifierFlags::Command);
+        file_menu.addItem(&close_item);
+
         let exit_item = unsafe {
             NSMenuItem::initWithTitle_action_keyEquivalent(
                 NSMenuItem::alloc(mtm),
