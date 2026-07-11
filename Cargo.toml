@@ -1,6 +1,6 @@
 [package]
 name = "markhola"
-version = "0.6.3"
+version = "0.7.0"
 edition = "2024"
 
 [dependencies]
@@ -18,4 +18,4 @@ serde_json = "=1.0.150"
 syntect = { version = "=5.3.0", default-features = false, features = ["default-fancy"] }
 tao = "=0.34.8"
 url = "=2.5.8"
-wry = "=0.53.5"
+wry = { version = "=0.53.5", features = ["devtools"] }

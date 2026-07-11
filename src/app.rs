@@ -1,5 +1,5 @@
 use std::ffi::{c_char, c_long, CStr};
-use std::fs::{OpenOptions, create_dir_all};
+use std::fs::{OpenOptions, create_dir_all, read_to_string};
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::Once;
@@ -17,8 +17,9 @@ use tao::keyboard::{KeyCode, ModifiersState};
 use tao::window::{Window, WindowBuilder};
 use wry::{WebView, WebViewBuilder};
 
-use crate::document::{ActiveDocument, DocumentSnapshot, DocumentMode};
+use crate::document::{ActiveDocument, DocumentSnapshot, DocumentTabSnapshot, DocumentMode};
 use crate::file_io;
+use crate::workspace::{DocumentWorkspace, WorkspaceOpenResult};
 
 const WINDOW_TITLE: &str = "MarkHola";
 const APP_VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -28,6 +29,9 @@ const APP_BUILD_TARGET: &str = std::env::consts::ARCH;
 const APP_BUILD_PLATFORM: &str = std::env::consts::OS;
 const MERMAID_RUNTIME: &str = include_str!("../assets/mermaid/mermaid.min.js");
 const MATHJAX_RUNTIME: &str = include_str!("../assets/mathjax/tex-svg-full.js");
+const DEFAULT_APP_THEME_NAME: &str = "default";
+const DEFAULT_APP_THEME_LAYOUT_FILE: &str = "layout.css";
+const DEFAULT_APP_THEME_CSS: &str = include_str!("../themes/default/layout.css");
 const DEBUG_LOG_DIR: &str = "/var/log/markhola";
 const DEBUG_LOG_FALLBACK_PATH: &str = "/tmp/markhola.log";
 static NEXT_EVENT_ID: AtomicU64 = AtomicU64::new(1);
@@ -37,6 +41,13 @@ static PANIC_HOOK_ONCE: Once = Once::new();
 enum UserEvent {
     OpenFile(ActionContext),
     OpenPath(OpenPathRequest),
+    ActivateDocument(u64),
+    ActivateNextDocument,
+    ActivatePreviousDocument,
+    CloseDocument(u64),
+    CloseCurrentDocument,
+    CloseOtherDocuments,
+    CloseAllDocuments,
     ShellReady,
     OpenExternal(String),
     SaveDocument,
@@ -60,10 +71,10 @@ struct StatusPayload<'a> {
 }
 
 #[derive(Clone, Debug, Serialize)]
-struct DocumentPresentation<'a> {
-    #[serde(flatten)]
-    document: &'a DocumentSnapshot,
-    status_message: &'a str,
+struct WorkspacePresentation {
+    tabs: Vec<DocumentTabSnapshot>,
+    active_document: Option<DocumentSnapshot>,
+    status_message: String,
 }
 
 #[derive(Clone, Debug)]
@@ -281,6 +292,21 @@ fn dispatch_user_event(proxy: &EventLoopProxy<UserEvent>, stage_source: &'static
                 request.path.display()
             ),
         ),
+        UserEvent::ActivateDocument(document_id) => (
+            None,
+            "ActivateDocument",
+            format!("source={} document_id={document_id}", stage_source),
+        ),
+        UserEvent::ActivateNextDocument => (None, "ActivateNextDocument", format!("source={stage_source}")),
+        UserEvent::ActivatePreviousDocument => (None, "ActivatePreviousDocument", format!("source={stage_source}")),
+        UserEvent::CloseDocument(document_id) => (
+            None,
+            "CloseDocument",
+            format!("source={} document_id={document_id}", stage_source),
+        ),
+        UserEvent::CloseCurrentDocument => (None, "CloseCurrentDocument", format!("source={stage_source}")),
+        UserEvent::CloseOtherDocuments => (None, "CloseOtherDocuments", format!("source={stage_source}")),
+        UserEvent::CloseAllDocuments => (None, "CloseAllDocuments", format!("source={stage_source}")),
         UserEvent::ShellReady => (None, "ShellReady", format!("source={stage_source}")),
         UserEvent::OpenExternal(href) => (None, "OpenExternal", format!("source={} href={href}", stage_source)),
         UserEvent::SaveDocument => (None, "SaveDocument", format!("source={stage_source}")),
@@ -317,7 +343,7 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
     let event_loop = EventLoopBuilder::<UserEvent>::with_user_event().build();
     let proxy = event_loop.create_proxy();
     let mut modifiers = ModifiersState::default();
-    let mut active_document: Option<ActiveDocument> = None;
+    let mut workspace = DocumentWorkspace::new();
     let mut shell_ready = false;
     let mut pending_open_requests: Vec<OpenPathRequest> = Vec::new();
 
@@ -330,6 +356,7 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
     let ipc_proxy = proxy.clone();
     let webview = WebViewBuilder::new()
         .with_html(app_shell_html())
+        .with_devtools(true)
         .with_ipc_handler(move |request| {
             handle_ipc_message(&ipc_proxy, request.body().to_owned());
         })
@@ -379,7 +406,7 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
             Event::WindowEvent { event, .. } => match event {
                 WindowEvent::CloseRequested => {
                     log_event("window.close_requested", None, "window close requested", "");
-                    if resolve_pending_changes(&window, &webview, &mut active_document) {
+                    if resolve_all_pending_changes(&window, &webview, &mut workspace) {
                         *control_flow = ControlFlow::Exit;
                     }
                 }
@@ -405,7 +432,7 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
                             }
                             KeyCode::KeyW => {
                                 log_event("keyboard.shortcut", None, "keyboard shortcut triggered", "key=Command+W");
-                                dispatch_user_event(&proxy, "keyboard", UserEvent::Exit);
+                                dispatch_user_event(&proxy, "keyboard", UserEvent::CloseCurrentDocument);
                             }
                             KeyCode::Slash => {
                                 log_event("keyboard.shortcut", None, "keyboard shortcut triggered", "key=Command+/");
@@ -445,16 +472,6 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
                     "handling UserEvent::OpenFile",
                     format!("source={}", ctx.source),
                 );
-                if !resolve_pending_changes(&window, &webview, &mut active_document) {
-                    log_event(
-                        "user_event.aborted",
-                        Some(ctx.event_id),
-                        "UserEvent::OpenFile aborted by pending changes dialog",
-                        "",
-                    );
-                    return;
-                }
-
                 match open_document_dialog(ctx.event_id) {
                     Some(path) => {
                         log_event(
@@ -463,7 +480,7 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
                             "open dialog returned path",
                             format!("path={}", path.display()),
                         );
-                        open_document(&window, &webview, &mut active_document, &path, Some(ctx.event_id))
+                        open_document(&window, &webview, &mut workspace, &path, Some(ctx.event_id))
                     }
                     None => {
                         log_event(
@@ -494,17 +511,71 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
                     pending_open_requests.push(OpenPathRequest { ctx, path });
                     return;
                 }
-                if !resolve_pending_changes(&window, &webview, &mut active_document) {
-                    log_event(
-                        "user_event.aborted",
-                        Some(ctx.event_id),
-                        "UserEvent::OpenPath aborted by pending changes dialog",
-                        format!("path={}", path.display()),
-                    );
-                    return;
+                open_document(&window, &webview, &mut workspace, &path, Some(ctx.event_id));
+            }
+            Event::UserEvent(UserEvent::ActivateDocument(document_id)) => {
+                log_event(
+                    "user_event.received",
+                    None,
+                    "handling UserEvent::ActivateDocument",
+                    format!("document_id={document_id}"),
+                );
+                if workspace.activate_document(document_id) {
+                    sync_workspace_state(&window, &webview, &workspace, "Document switched.");
+                } else {
+                    render_status(&webview, "Document tab no longer exists.", "error");
                 }
-
-                open_document(&window, &webview, &mut active_document, &path, Some(ctx.event_id));
+            }
+            Event::UserEvent(UserEvent::ActivateNextDocument) => {
+                log_event("user_event.received", None, "handling UserEvent::ActivateNextDocument", "");
+                if workspace.activate_next_document() {
+                    sync_workspace_state(&window, &webview, &workspace, "Switched to next tab.");
+                }
+            }
+            Event::UserEvent(UserEvent::ActivatePreviousDocument) => {
+                log_event("user_event.received", None, "handling UserEvent::ActivatePreviousDocument", "");
+                if workspace.activate_previous_document() {
+                    sync_workspace_state(&window, &webview, &workspace, "Switched to previous tab.");
+                }
+            }
+            Event::UserEvent(UserEvent::CloseDocument(document_id)) => {
+                log_event(
+                    "user_event.received",
+                    None,
+                    "handling UserEvent::CloseDocument",
+                    format!("document_id={document_id}"),
+                );
+                close_document_tab(&window, &webview, &mut workspace, document_id, "Document closed.");
+            }
+            Event::UserEvent(UserEvent::CloseCurrentDocument) => {
+                log_event("user_event.received", None, "handling UserEvent::CloseCurrentDocument", "");
+                if let Some(document_id) = workspace.active_document_id() {
+                    close_document_tab(&window, &webview, &mut workspace, document_id, "Document closed.");
+                } else {
+                    *control_flow = ControlFlow::Exit;
+                }
+            }
+            Event::UserEvent(UserEvent::CloseOtherDocuments) => {
+                log_event("user_event.received", None, "handling UserEvent::CloseOtherDocuments", "");
+                if let Some(active_document_id) = workspace.active_document_id() {
+                    let document_ids = workspace.other_document_ids(active_document_id);
+                    if document_ids.is_empty() {
+                        render_status(&webview, "No other tabs to close.", "info");
+                    } else {
+                        close_document_tabs(&window, &webview, &mut workspace, &document_ids, "Other tabs closed.");
+                    }
+                } else {
+                    render_status(&webview, "No document opened.", "info");
+                }
+            }
+            Event::UserEvent(UserEvent::CloseAllDocuments) => {
+                log_event("user_event.received", None, "handling UserEvent::CloseAllDocuments", "");
+                let document_ids = workspace.document_ids();
+                if document_ids.is_empty() {
+                    render_status(&webview, "No document opened.", "info");
+                } else {
+                    close_document_tabs(&window, &webview, &mut workspace, &document_ids, "All tabs closed.");
+                }
             }
             Event::UserEvent(UserEvent::ShellReady) => {
                 shell_ready = true;
@@ -527,17 +598,22 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
             }
             Event::UserEvent(UserEvent::SaveDocument) => {
                 log_event("user_event.received", None, "handling UserEvent::SaveDocument", "");
-                save_active_document(&window, &webview, &mut active_document);
+                save_active_document(&window, &webview, &mut workspace);
             }
             Event::UserEvent(UserEvent::ToggleMode) => {
                 log_event("user_event.received", None, "handling UserEvent::ToggleMode", "");
-                if let Some(document) = active_document.as_mut() {
+                let status = if let Some(document) = workspace.active_document_mut() {
                     document.toggle_mode();
-                    let status = match document.mode() {
+                    Some(match document.mode() {
                         DocumentMode::Readonly => "Readonly preview updated.",
                         DocumentMode::Writable => "Writable mode enabled.",
-                    };
-                    present_document(&window, &webview, document, status, true);
+                    })
+                } else {
+                    None
+                };
+
+                if let Some(status) = status {
+                    present_workspace(&window, &webview, &workspace, status, true);
                 } else {
                     render_status(&webview, "No document opened.", "error");
                 }
@@ -549,9 +625,15 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
                     "handling UserEvent::EditorChanged",
                     format!("bytes={}", markdown.len()),
                 );
-                if let Some(document) = active_document.as_mut() {
+                let has_active_document = if let Some(document) = workspace.active_document_mut() {
                     document.update_markdown(markdown);
-                    sync_document_state(&window, &webview, document, "Unsaved changes.");
+                    true
+                } else {
+                    false
+                };
+
+                if has_active_document {
+                    sync_workspace_state(&window, &webview, &workspace, "Unsaved changes.");
                 }
             }
             Event::UserEvent(UserEvent::ShowAbout) => {
@@ -560,7 +642,7 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
             }
             Event::UserEvent(UserEvent::Exit) => {
                 log_event("user_event.received", None, "handling UserEvent::Exit", "");
-                if resolve_pending_changes(&window, &webview, &mut active_document) {
+                if resolve_all_pending_changes(&window, &webview, &mut workspace) {
                     *control_flow = ControlFlow::Exit;
                 } else {
                     return;
@@ -597,6 +679,19 @@ fn handle_ipc_message(proxy: &EventLoopProxy<UserEvent>, payload: String) {
         Some("toggle-mode") => {
             dispatch_user_event(proxy, "ipc", UserEvent::ToggleMode);
         }
+        Some("activate-document") => {
+            if let Some(document_id) = value.get("documentId").and_then(Value::as_u64) {
+                dispatch_user_event(proxy, "ipc", UserEvent::ActivateDocument(document_id));
+            }
+        }
+        Some("close-document") => {
+            if let Some(document_id) = value.get("documentId").and_then(Value::as_u64) {
+                dispatch_user_event(proxy, "ipc", UserEvent::CloseDocument(document_id));
+            }
+        }
+        Some("close-current-document") => {
+            dispatch_user_event(proxy, "ipc", UserEvent::CloseCurrentDocument);
+        }
         Some("request-save") => {
             dispatch_user_event(proxy, "ipc", UserEvent::SaveDocument);
         }
@@ -632,7 +727,7 @@ fn open_document_dialog(event_id: u64) -> Option<PathBuf> {
 fn open_document(
     window: &Window,
     webview: &WebView,
-    active_document: &mut Option<ActiveDocument>,
+    workspace: &mut DocumentWorkspace,
     path: &PathBuf,
     event_id: Option<u64>,
 ) {
@@ -644,7 +739,13 @@ fn open_document(
     );
     render_status(webview, "Loading document...", "info");
 
-    match load_document(path) {
+    if let Some(document_id) = workspace.find_by_path(path) {
+        workspace.activate_document(document_id);
+        sync_workspace_state(window, webview, workspace, "Document already opened. Switched to tab.");
+        return;
+    }
+
+    match load_document(workspace.next_document_id(), path) {
         Ok(document) => {
             log_event(
                 "open_document.end",
@@ -652,9 +753,13 @@ fn open_document(
                 "open_document success",
                 format!("path={}", path.display()),
             );
-            *active_document = Some(document);
-            if let Some(document) = active_document.as_ref() {
-                present_document(window, webview, document, "Document loaded.", true);
+            match workspace.open_document(document) {
+                WorkspaceOpenResult::OpenedNew(_) => {
+                    present_workspace(window, webview, workspace, "Document loaded.", true);
+                }
+                WorkspaceOpenResult::ActivatedExisting(_) => {
+                    sync_workspace_state(window, webview, workspace, "Document already opened. Switched to tab.");
+                }
             }
         }
         Err(message) => {
@@ -669,50 +774,119 @@ fn open_document(
     }
 }
 
-fn load_document(path: &PathBuf) -> Result<ActiveDocument, String> {
+fn load_document(document_id: u64, path: &PathBuf) -> Result<ActiveDocument, String> {
     log_event("load_document.begin", None, "load_document path", format!("path={}", path.display()));
     let markdown = file_io::load_markdown(path)?;
     let base_url = file_io::directory_base_url(path)?;
-    Ok(ActiveDocument::open(path.clone(), markdown, base_url))
+    Ok(ActiveDocument::open_with_id(document_id, path.clone(), markdown, base_url))
 }
 
-fn save_active_document(window: &Window, webview: &WebView, active_document: &mut Option<ActiveDocument>) -> bool {
-    let Some(document) = active_document.as_mut() else {
+fn save_document(document: &mut ActiveDocument) -> Result<(), String> {
+    file_io::save_markdown(document.file_path(), document.markdown())?;
+    document.mark_saved();
+    Ok(())
+}
+
+fn save_active_document(window: &Window, webview: &WebView, workspace: &mut DocumentWorkspace) -> bool {
+    let Some(document) = workspace.active_document_mut() else {
         render_status(webview, "No document to save.", "error");
         return false;
     };
 
-    if let Err(message) = file_io::save_markdown(document.file_path(), document.markdown()) {
+    if let Err(message) = save_document(document) {
         render_status(webview, &message, "error");
         return false;
     }
 
-    document.mark_saved();
-    sync_document_state(window, webview, document, "Saved.");
+    sync_workspace_state(window, webview, workspace, "Saved.");
     true
 }
 
-fn resolve_pending_changes(
-    window: &Window,
-    webview: &WebView,
-    active_document: &mut Option<ActiveDocument>,
-) -> bool {
-    let Some(document) = active_document.as_mut() else {
-        return true;
-    };
-
+fn resolve_document_pending_changes(window: &Window, webview: &WebView, document: &mut ActiveDocument) -> bool {
     if !document.is_dirty() {
         return true;
     }
 
     match ask_pending_changes_action(window, document.file_name()) {
-        PendingChangesAction::Save => save_active_document(window, webview, active_document),
+        PendingChangesAction::Save => match save_document(document) {
+            Ok(()) => true,
+            Err(message) => {
+                render_status(webview, &message, "error");
+                false
+            }
+        },
         PendingChangesAction::Discard => true,
         PendingChangesAction::Cancel => {
             render_status(webview, "Action cancelled.", "info");
             false
         }
     }
+}
+
+fn resolve_all_pending_changes(window: &Window, webview: &WebView, workspace: &mut DocumentWorkspace) -> bool {
+    let document_ids = workspace
+        .tab_snapshots()
+        .into_iter()
+        .map(|tab| tab.document_id)
+        .collect::<Vec<_>>();
+
+    for document_id in document_ids {
+        let Some(document) = workspace.document_by_id_mut(document_id) else {
+            continue;
+        };
+
+        if !resolve_document_pending_changes(window, webview, document) {
+            return false;
+        }
+    }
+
+    true
+}
+
+fn close_document_tab(
+    window: &Window,
+    webview: &WebView,
+    workspace: &mut DocumentWorkspace,
+    document_id: u64,
+    status: &str,
+) -> bool {
+    let Some(document) = workspace.document_by_id_mut(document_id) else {
+        render_status(webview, "Document tab no longer exists.", "error");
+        return false;
+    };
+
+    if !resolve_document_pending_changes(window, webview, document) {
+        return false;
+    }
+
+    workspace.close_document(document_id);
+    sync_workspace_state(window, webview, workspace, status);
+    true
+}
+
+fn close_document_tabs(
+    window: &Window,
+    webview: &WebView,
+    workspace: &mut DocumentWorkspace,
+    document_ids: &[u64],
+    status: &str,
+) -> bool {
+    for document_id in document_ids {
+        let Some(document) = workspace.document_by_id_mut(*document_id) else {
+            continue;
+        };
+
+        if !resolve_document_pending_changes(window, webview, document) {
+            return false;
+        }
+    }
+
+    for document_id in document_ids {
+        workspace.close_document(*document_id);
+    }
+
+    sync_workspace_state(window, webview, workspace, status);
+    true
 }
 
 fn ask_pending_changes_action(window: &Window, file_name: &str) -> PendingChangesAction {
@@ -735,60 +909,64 @@ fn ask_pending_changes_action(window: &Window, file_name: &str) -> PendingChange
     }
 }
 
-fn present_document(window: &Window, webview: &WebView, document: &ActiveDocument, status: &str, full_render: bool) {
-    update_window_title(window, Some(document));
+fn present_workspace(
+    window: &Window,
+    webview: &WebView,
+    workspace: &DocumentWorkspace,
+    status: &str,
+    full_render: bool,
+) {
+    update_window_title(window, workspace.active_window_title().as_deref());
 
     if full_render {
-        render_document(webview, document, status);
+        render_workspace(webview, workspace, status);
     } else {
-        sync_document_state(window, webview, document, status);
+        sync_workspace_state(window, webview, workspace, status);
     }
 }
 
-fn update_window_title(window: &Window, document: Option<&ActiveDocument>) {
-    let title = document
-        .map(ActiveDocument::window_title)
-        .unwrap_or_else(|| WINDOW_TITLE.to_string());
+fn update_window_title(window: &Window, title: Option<&str>) {
+    let title = title.unwrap_or(WINDOW_TITLE);
     window.set_title(&title);
 }
 
-fn render_document(webview: &WebView, document: &ActiveDocument, status: &str) {
-    let snapshot = document.snapshot();
-    let payload = DocumentPresentation {
-        document: &snapshot,
-        status_message: status,
-    };
+fn workspace_presentation(workspace: &DocumentWorkspace, status: &str) -> WorkspacePresentation {
+    WorkspacePresentation {
+        tabs: workspace.tab_snapshots(),
+        active_document: workspace.active_document_snapshot(),
+        status_message: status.to_string(),
+    }
+}
+
+fn render_workspace(webview: &WebView, workspace: &DocumentWorkspace, status: &str) {
+    let payload = workspace_presentation(workspace, status);
     let serialized = match serde_json::to_string(&payload) {
         Ok(serialized) => serialized,
         Err(error) => {
-            render_status(webview, &format!("Failed to serialize document: {error}"), "error");
+            render_status(webview, &format!("Failed to serialize workspace: {error}"), "error");
             return;
         }
     };
 
-    let script = format!("window.renderDocument({serialized});");
+    let script = format!("window.renderWorkspace({serialized});");
     if let Err(error) = webview.evaluate_script(&script) {
         render_status(webview, &format!("WebView script error: {error}"), "error");
     }
 }
 
-fn sync_document_state(window: &Window, webview: &WebView, document: &ActiveDocument, status: &str) {
-    update_window_title(window, Some(document));
+fn sync_workspace_state(window: &Window, webview: &WebView, workspace: &DocumentWorkspace, status: &str) {
+    update_window_title(window, workspace.active_window_title().as_deref());
 
-    let snapshot = document.snapshot();
-    let payload = DocumentPresentation {
-        document: &snapshot,
-        status_message: status,
-    };
+    let payload = workspace_presentation(workspace, status);
     let serialized = match serde_json::to_string(&payload) {
         Ok(serialized) => serialized,
         Err(error) => {
-            render_status(webview, &format!("Failed to serialize document: {error}"), "error");
+            render_status(webview, &format!("Failed to serialize workspace: {error}"), "error");
             return;
         }
     };
 
-    let script = format!("window.updateDocumentState({serialized});");
+    let script = format!("window.updateWorkspaceState({serialized});");
     if let Err(error) = webview.evaluate_script(&script) {
         render_status(webview, &format!("WebView script error: {error}"), "error");
     }
@@ -807,7 +985,7 @@ fn render_status(webview: &WebView, message: &str, level: &str) {
 fn render_about(webview: &WebView) {
     let script = format!(
         "window.showAbout({{version:{}, author:{}, githubUrl:{}, buildTarget:{}, buildPlatform:{}}});",
-        serde_json::to_string(APP_VERSION).unwrap_or_else(|_| "\"0.6.3\"".to_string()),
+        serde_json::to_string(APP_VERSION).unwrap_or_else(|_| "\"0.7.0\"".to_string()),
         serde_json::to_string(APP_AUTHOR).unwrap_or_else(|_| "\"Ronnie Deng\"".to_string()),
         serde_json::to_string(APP_GITHUB_URL)
             .unwrap_or_else(|_| "\"https://github.com/phpple/markhola\"".to_string()),
@@ -819,8 +997,78 @@ fn render_about(webview: &WebView) {
 
 fn app_shell_html() -> String {
     APP_SHELL_HTML
+        .replace("__APP_THEME__", &app_theme_css())
         .replace("__MERMAID_RUNTIME__", &mermaid_runtime_script())
         .replace("__MATHJAX_RUNTIME__", &mathjax_runtime_script())
+}
+
+fn app_theme_css() -> String {
+    for path in app_theme_candidates() {
+        match read_to_string(&path) {
+            Ok(css) => {
+                log_event(
+                    "theme.load",
+                    None,
+                    "loaded app theme from filesystem",
+                    format!("path={}", path.display()),
+                );
+                return css.replace("</style", "<\\/style");
+            }
+            Err(error) => {
+                log_event(
+                    "theme.load.skip",
+                    None,
+                    "failed to load candidate app theme",
+                    format!("path={} error={error}", path.display()),
+                );
+            }
+        }
+    }
+
+    log_event(
+        "theme.load.fallback",
+        None,
+        "using embedded fallback app theme",
+        format!("theme={DEFAULT_APP_THEME_NAME}"),
+    );
+    DEFAULT_APP_THEME_CSS.replace("</style", "<\\/style")
+}
+
+fn app_theme_candidates() -> Vec<PathBuf> {
+    let mut candidates = Vec::new();
+
+    if let Ok(current_dir) = std::env::current_dir() {
+        candidates.push(
+            current_dir
+                .join("themes")
+                .join(DEFAULT_APP_THEME_NAME)
+                .join(DEFAULT_APP_THEME_LAYOUT_FILE),
+        );
+    }
+
+    if let Ok(current_exe) = std::env::current_exe() {
+        if let Some(executable_dir) = current_exe.parent() {
+            candidates.push(
+                executable_dir
+                    .join("themes")
+                    .join(DEFAULT_APP_THEME_NAME)
+                    .join(DEFAULT_APP_THEME_LAYOUT_FILE),
+            );
+        }
+
+        if let Some(contents_dir) = current_exe.parent().and_then(Path::parent) {
+            candidates.push(
+                contents_dir
+                    .join("Resources")
+                    .join("themes")
+                    .join(DEFAULT_APP_THEME_NAME)
+                    .join(DEFAULT_APP_THEME_LAYOUT_FILE),
+            );
+        }
+    }
+
+    candidates.dedup();
+    candidates
 }
 
 fn mermaid_runtime_script() -> String {
@@ -838,640 +1086,31 @@ const APP_SHELL_HTML: &str = r##"<!DOCTYPE html>
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <base id="document-base" href="" />
     <title>MarkHola</title>
-    <style>
-      :root {
-        color-scheme: light;
-        --bg: #f5f1e8;
-        --panel: rgba(255, 253, 248, 0.88);
-        --panel-strong: rgba(255, 251, 243, 0.97);
-        --border: rgba(92, 74, 52, 0.16);
-        --text: #2b241d;
-        --muted: #6f6258;
-        --accent: #0f766e;
-        --accent-strong: #115e59;
-        --warn: #b45309;
-        --danger: #b91c1c;
-        --shadow: 0 24px 60px rgba(69, 48, 29, 0.12);
-        --font-ui: "SF Pro Display", "Helvetica Neue", sans-serif;
-        --font-body: "Charter", "Iowan Old Style", Georgia, serif;
-        --font-code: "SF Mono", "JetBrains Mono", monospace;
-      }
-
-      * {
-        box-sizing: border-box;
-      }
-
-      html,
-      body {
-        margin: 0;
-        min-height: 100%;
-        background:
-          radial-gradient(circle at top left, rgba(15, 118, 110, 0.08), transparent 35%),
-          linear-gradient(180deg, #f8f5ee 0%, #f2ecdf 100%);
-        color: var(--text);
-        font-family: var(--font-ui);
-      }
-
-      body {
-        padding: 18px;
-      }
-
-      .app {
-        display: grid;
-        grid-template-rows: minmax(0, 1fr) auto;
-        gap: 14px;
-        min-height: calc(100vh - 36px);
-      }
-
-      .preview-shell {
-        display: grid;
-        grid-template-rows: auto 1fr;
-        min-height: 0;
-        background: var(--panel-strong);
-        border: 1px solid var(--border);
-        border-radius: 24px;
-        overflow: hidden;
-        box-shadow: var(--shadow);
-      }
-
-      .preview-header {
-        display: flex;
-        justify-content: space-between;
-        gap: 12px;
-        padding: 14px 20px;
-        border-bottom: 1px solid var(--border);
-        background: rgba(255, 253, 248, 0.72);
-      }
-
-      .preview-title {
-        display: flex;
-        flex-direction: column;
-        gap: 3px;
-        min-width: 0;
-      }
-
-      .preview-title strong {
-        font-size: 15px;
-      }
-
-      .preview-title span {
-        color: var(--muted);
-        font-size: 12px;
-        white-space: nowrap;
-        overflow: hidden;
-        text-overflow: ellipsis;
-      }
-
-      .status {
-        color: var(--muted);
-        font-size: 12px;
-        font-weight: 600;
-        text-align: right;
-      }
-
-      .status[data-level="warning"] {
-        color: var(--warn);
-      }
-
-      .status[data-level="error"] {
-        color: var(--danger);
-      }
-
-      .workspace {
-        min-height: 0;
-      }
-
-      .pane {
-        height: 100%;
-      }
-
-      .preview {
-        overflow: auto;
-        padding: 24px;
-      }
-
-      .editor-pane {
-        min-height: 100%;
-        padding: 22px;
-      }
-
-      .editor-shell {
-        display: grid;
-        grid-template-columns: auto minmax(0, 1fr);
-        height: 100%;
-        border-radius: 18px;
-        background: rgba(255, 255, 255, 0.9);
-        border: 1px solid rgba(92, 74, 52, 0.16);
-        overflow: hidden;
-        box-shadow: inset 0 1px 3px rgba(92, 74, 52, 0.06);
-      }
-
-      .editor-line-numbers {
-        min-width: 56px;
-        padding: 18px 10px 18px 14px;
-        background: rgba(92, 74, 52, 0.06);
-        border-right: 1px solid rgba(92, 74, 52, 0.12);
-        color: rgba(111, 98, 88, 0.78);
-        font: 15px/1.68 var(--font-code);
-        text-align: right;
-        user-select: none;
-        overflow: hidden;
-      }
-
-      .editor-line-number {
-        display: block;
-      }
-
-      .editor {
-        width: 100%;
-        border: 0;
-        color: var(--text);
-        font: 15px/1.68 var(--font-code);
-        padding: 18px 20px;
-        resize: none;
-        outline: none;
-        background: transparent;
-      }
-
-      .empty-state {
-        display: grid;
-        place-items: center;
-        min-height: 100%;
-        padding: 40px 20px;
-        text-align: center;
-      }
-
-      .empty-card {
-        max-width: 440px;
-        padding: 32px;
-        border-radius: 22px;
-        background: rgba(255, 255, 255, 0.72);
-        border: 1px solid rgba(92, 74, 52, 0.1);
-      }
-
-      .empty-card h2 {
-        margin: 0 0 10px;
-        font-size: 28px;
-      }
-
-      .bottom-bar {
-        display: grid;
-        grid-template-columns: minmax(0, 1fr) auto auto auto auto;
-        gap: 16px;
-        align-items: center;
-        padding: 12px 16px;
-        background: var(--panel);
-        border: 1px solid var(--border);
-        border-radius: 16px;
-        box-shadow: var(--shadow);
-        backdrop-filter: blur(14px);
-        font-size: 12px;
-        color: var(--muted);
-      }
-
-      .bottom-item {
-        min-width: 0;
-        white-space: nowrap;
-        overflow: hidden;
-        text-overflow: ellipsis;
-      }
-
-      .bottom-item strong {
-        color: var(--text);
-        font-weight: 600;
-      }
-
-      .markdown-body {
-        max-width: 860px;
-        margin: 0 auto;
-        color: var(--text);
-        font-family: var(--font-body);
-        line-height: 1.72;
-        font-size: 17px;
-      }
-
-      .markdown-body h1,
-      .markdown-body h2,
-      .markdown-body h3,
-      .markdown-body h4,
-      .markdown-body h5,
-      .markdown-body h6 {
-        margin-top: 1.7em;
-        margin-bottom: 0.55em;
-        line-height: 1.2;
-        font-family: var(--font-ui);
-      }
-
-      .markdown-body h1 {
-        font-size: 2.3rem;
-      }
-
-      .markdown-body h2 {
-        font-size: 1.72rem;
-      }
-
-      .markdown-body h3 {
-        font-size: 1.35rem;
-      }
-
-      .markdown-body p,
-      .markdown-body ul,
-      .markdown-body ol,
-      .markdown-body table,
-      .markdown-body blockquote {
-        margin: 1em 0;
-      }
-
-      .markdown-body a {
-        color: var(--accent);
-      }
-
-      .markdown-body img {
-        display: block;
-        max-width: 100%;
-        height: auto;
-        margin: 1.4em auto;
-        border-radius: 16px;
-        box-shadow: 0 12px 34px rgba(56, 41, 28, 0.14);
-      }
-
-      .markdown-body table {
-        width: 100%;
-        border-collapse: collapse;
-        background: rgba(255, 255, 255, 0.66);
-        overflow: hidden;
-        border-radius: 14px;
-      }
-
-      .markdown-body th,
-      .markdown-body td {
-        padding: 10px 12px;
-        border: 1px solid rgba(92, 74, 52, 0.14);
-        text-align: left;
-        vertical-align: top;
-      }
-
-      .markdown-body thead {
-        background: rgba(15, 118, 110, 0.08);
-        font-family: var(--font-ui);
-      }
-
-      .markdown-body code {
-        font-family: var(--font-code);
-        font-size: 0.92em;
-        background: rgba(43, 36, 29, 0.08);
-        padding: 0.15em 0.35em;
-        border-radius: 6px;
-      }
-
-      .markdown-body pre {
-        overflow: auto;
-        padding: 16px;
-        border-radius: 16px;
-        background: #666666;
-        color: #f8f5ee;
-      }
-
-      .markdown-body pre code {
-        display: block;
-        background: transparent;
-        padding: 0;
-        border-radius: 0;
-        font-size: inherit;
-      }
-
-      .markdown-body .code-block {
-        position: relative;
-        margin: 1.2em 0;
-        border-radius: 18px;
-        background: #666666;
-        box-shadow: 0 12px 34px rgba(56, 41, 28, 0.16);
-        overflow: hidden;
-        --code-line-height: 1.65;
-        --code-font-size: 14px;
-      }
-
-      .markdown-body .code-block__badge {
-        position: absolute;
-        top: 12px;
-        right: 14px;
-        z-index: 1;
-        padding: 4px 10px;
-        border-radius: 999px;
-        background: rgba(255, 255, 255, 0.18);
-        color: rgba(248, 245, 238, 0.92);
-        font: 11px/1.2 var(--font-ui);
-        letter-spacing: 0.04em;
-        text-transform: uppercase;
-        opacity: 0;
-        transition: opacity 140ms ease;
-        pointer-events: none;
-      }
-
-      .markdown-body .code-block:hover .code-block__badge {
-        opacity: 1;
-      }
-
-      .markdown-body .code-block__body {
-        display: grid;
-        grid-template-columns: auto minmax(0, 1fr);
-        align-items: stretch;
-        overflow: auto;
-      }
-
-      .markdown-body .code-block__line-numbers {
-        display: grid;
-        align-content: start;
-        padding: 18px 0 18px 14px;
-        background: rgba(255, 255, 255, 0.1);
-        border-right: 1px solid rgba(255, 255, 255, 0.14);
-        color: rgba(248, 245, 238, 0.72);
-        font: var(--code-font-size)/var(--code-line-height) var(--font-code);
-        user-select: none;
-      }
-
-      .markdown-body .code-block__line-number {
-        display: block;
-        min-width: 2.4em;
-        padding-right: 12px;
-        text-align: right;
-      }
-
-      .markdown-body .code-block__pre {
-        margin: 0;
-        min-width: 100%;
-        overflow: visible;
-        padding: 18px 18px 18px 16px;
-        border-radius: 0;
-        background: transparent;
-        font: var(--code-font-size)/var(--code-line-height) var(--font-code);
-      }
-
-      .markdown-body .code-block__code {
-        white-space: pre;
-        font: inherit;
-        line-height: inherit;
-      }
-
-      .markdown-body .code-block__line {
-        display: block;
-        line-height: var(--code-line-height);
-      }
-
-      .markdown-body .mermaid-block {
-        margin: 1.2em 0;
-        border-radius: 18px;
-        background: rgba(255, 255, 255, 0.9);
-        border: 1px solid rgba(92, 74, 52, 0.12);
-        box-shadow: 0 12px 34px rgba(56, 41, 28, 0.08);
-        overflow: auto;
-      }
-
-      .markdown-body .mermaid-block__status {
-        padding: 12px 16px 0;
-        color: var(--muted);
-        font: 12px/1.4 var(--font-ui);
-      }
-
-      .markdown-body .mermaid-block__diagram {
-        min-width: min-content;
-        padding: 10px 16px 16px;
-      }
-
-      .markdown-body .mermaid-block__diagram svg {
-        display: block;
-        max-width: none;
-        height: auto;
-      }
-
-      .markdown-body .mermaid-block__error {
-        margin: 0;
-        padding: 12px 16px 16px;
-        color: #8b1e1e;
-        font: 13px/1.6 var(--font-code);
-        white-space: pre-wrap;
-      }
-
-      .markdown-body .math.math-inline {
-        display: inline-flex;
-        align-items: center;
-        vertical-align: middle;
-        max-width: 100%;
-      }
-
-      .markdown-body .math.math-display {
-        display: block;
-        margin: 1.25em 0;
-        overflow-x: auto;
-        overflow-y: hidden;
-        text-align: center;
-      }
-
-      .markdown-body .math svg,
-      .markdown-body .math-block__formula svg {
-        display: inline-block;
-        max-width: 100%;
-        height: auto;
-      }
-
-      .markdown-body .math-block {
-        margin: 1.2em 0;
-        border-radius: 18px;
-        background: rgba(255, 255, 255, 0.9);
-        border: 1px solid rgba(92, 74, 52, 0.12);
-        box-shadow: 0 12px 34px rgba(56, 41, 28, 0.08);
-        overflow-x: auto;
-      }
-
-      .markdown-body .math-block__status {
-        padding: 12px 16px 0;
-        color: var(--muted);
-        font: 12px/1.4 var(--font-ui);
-      }
-
-      .markdown-body .math-block__formula {
-        min-width: min-content;
-        padding: 10px 16px 16px;
-        text-align: center;
-      }
-
-      .markdown-body .math-block__error {
-        margin: 0;
-        padding: 12px 16px 16px;
-        color: #8b1e1e;
-        font: 13px/1.6 var(--font-code);
-        white-space: pre-wrap;
-        text-align: left;
-      }
-
-      .markdown-body blockquote {
-        padding: 2px 0 2px 18px;
-        border-left: 4px solid rgba(15, 118, 110, 0.3);
-        color: #51453b;
-      }
-
-      .markdown-body .image-error {
-        padding: 12px 14px;
-        border-radius: 12px;
-        background: rgba(183, 28, 28, 0.08);
-        border: 1px solid rgba(183, 28, 28, 0.16);
-        color: #8b1e1e;
-        font-family: var(--font-ui);
-        font-size: 14px;
-      }
-
-      .hidden {
-        display: none !important;
-      }
-
-      .about-overlay {
-        position: fixed;
-        inset: 0;
-        display: grid;
-        place-items: center;
-        padding: 24px;
-        background: rgba(34, 27, 20, 0.28);
-        backdrop-filter: blur(12px);
-        z-index: 50;
-      }
-
-      .about-dialog {
-        width: min(560px, 100%);
-        padding: 30px;
-        border-radius: 30px;
-        background:
-          linear-gradient(180deg, rgba(255, 252, 246, 0.99) 0%, rgba(252, 247, 239, 0.99) 100%);
-        border: 1px solid rgba(92, 74, 52, 0.12);
-        box-shadow: 0 24px 80px rgba(50, 35, 22, 0.18);
-      }
-
-      .about-header {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        gap: 16px;
-        margin-bottom: 18px;
-      }
-
-      .about-header h2 {
-        margin: 0;
-        font-size: 20px;
-      }
-
-      .about-close {
-        border: 0;
-        background: transparent;
-        color: var(--muted);
-        font: inherit;
-        font-size: 26px;
-        line-height: 1;
-        cursor: pointer;
-        padding: 0;
-      }
-
-      .about-brand {
-        display: grid;
-        justify-items: center;
-        gap: 14px;
-        margin-bottom: 22px;
-      }
-
-      .about-logo {
-        width: min(300px, 100%);
-        height: auto;
-      }
-
-      .about-product {
-        display: grid;
-        gap: 4px;
-        justify-items: center;
-      }
-
-      .about-product h3 {
-        margin: 0;
-        font-size: 24px;
-        letter-spacing: 0.02em;
-      }
-
-      .about-product p {
-        margin: 0;
-        color: var(--muted);
-        font-size: 13px;
-      }
-
-      .about-meta {
-        display: grid;
-        gap: 10px;
-        color: var(--muted);
-        font-size: 14px;
-      }
-
-      .about-meta-row {
-        display: grid;
-        grid-template-columns: 96px minmax(0, 1fr) auto;
-        gap: 12px;
-        align-items: center;
-        padding: 10px 12px;
-        border-radius: 14px;
-        background: rgba(255, 255, 255, 0.54);
-        border: 1px solid rgba(92, 74, 52, 0.08);
-      }
-
-      .about-meta strong {
-        color: var(--text);
-        font-weight: 600;
-      }
-
-      .about-value {
-        min-width: 0;
-        overflow: hidden;
-        text-overflow: ellipsis;
-      }
-
-      .about-copy {
-        appearance: none;
-        border: 0;
-        border-radius: 999px;
-        padding: 7px 12px;
-        font: inherit;
-        font-size: 12px;
-        font-weight: 600;
-        color: white;
-        background: linear-gradient(135deg, var(--accent) 0%, var(--accent-strong) 100%);
-        cursor: pointer;
-        box-shadow: 0 8px 20px rgba(15, 118, 110, 0.22);
-      }
-
-      .about-footer {
-        margin-top: 18px;
-        color: var(--muted);
-        font-size: 12px;
-        text-align: center;
-      }
-    </style>
+    <style>__APP_THEME__</style>
   </head>
   <body>
-    <div class="app">
-      <section class="preview-shell">
-        <div class="preview-header">
-          <div class="preview-title">
-            <strong id="documentTitle">Preview</strong>
-            <span id="documentSubtitle">Use File > Open, Command+O, or drag a Markdown file into the window.</span>
-          </div>
-          <span id="status" class="status" data-level="info">Ready.</span>
-        </div>
-        <div class="workspace">
-          <div class="empty-state pane" id="emptyState">
-            <div class="empty-card">
-              <h2>No document opened</h2>
-              <p>Open, drag, or drop a Markdown file to preview or edit the current Markdown source.</p>
-            </div>
-          </div>
-          <div class="preview pane hidden" id="previewPane">
-            <article class="markdown-body" id="content"></article>
-          </div>
-          <div class="editor-pane pane hidden" id="editorPane">
-            <div class="editor-shell" id="editorShell">
+        <div class="app">
+          <div class="tabs-bar hidden" id="tabsBar"></div>
+          <section class="preview-shell">
+            <div class="workspace">
+              <div class="empty-state pane" id="emptyState">
+                <div class="empty-card">
+                  <h2>No document opened</h2>
+                  <p>Open, drag, or drop a Markdown file to preview or edit the current Markdown source.</p>
+                </div>
+              </div>
+              <div class="preview pane hidden" id="previewPane">
+                <div class="preview-header" id="previewHeader">
+                  <div class="preview-title">
+                    <strong id="documentTitle">Preview</strong>
+                    <span id="documentSubtitle">Use File > Open, Command+O, or drag a Markdown file into the window.</span>
+                  </div>
+                  <span id="status" class="status" data-level="info">Ready.</span>
+                </div>
+                <article class="markdown-body" id="content"></article>
+              </div>
+              <div class="editor-pane pane hidden" id="editorPane">
+                <div class="editor-shell" id="editorShell">
               <div id="editorLineNumbers" class="editor-line-numbers" aria-hidden="true">1</div>
               <textarea id="editor" class="editor" spellcheck="false" aria-label="Markdown editor"></textarea>
             </div>
@@ -1530,7 +1169,7 @@ const APP_SHELL_HTML: &str = r##"<!DOCTYPE html>
         <div class="about-meta">
           <div class="about-meta-row">
             <strong>Version</strong>
-            <span class="about-value" id="aboutVersion">0.6.3</span>
+            <span class="about-value" id="aboutVersion">0.7.0</span>
             <span></span>
           </div>
           <div class="about-meta-row">
@@ -1568,6 +1207,8 @@ const APP_SHELL_HTML: &str = r##"<!DOCTYPE html>
       const emptyState = document.getElementById("emptyState");
       const previewPane = document.getElementById("previewPane");
       const editorPane = document.getElementById("editorPane");
+      const previewHeader = document.getElementById("previewHeader");
+      const tabsBar = document.getElementById("tabsBar");
       const editorLineNumbers = document.getElementById("editorLineNumbers");
       const editor = document.getElementById("editor");
       const content = document.getElementById("content");
@@ -1586,6 +1227,7 @@ const APP_SHELL_HTML: &str = r##"<!DOCTYPE html>
       const aboutCopy = document.getElementById("aboutCopy");
       let mermaidInitialized = false;
       let mathJaxReadyPromise = null;
+      let currentDocumentId = null;
 
       const hideAbout = () => {
         aboutOverlay.classList.add("hidden");
@@ -1703,32 +1345,93 @@ const APP_SHELL_HTML: &str = r##"<!DOCTYPE html>
         document.execCommand(command);
       };
 
+      const attachHeaderForMode = (mode) => {
+        if (mode === "writable") {
+          if (editorPane.firstElementChild !== previewHeader) {
+            editorPane.insertBefore(previewHeader, editorPane.firstChild);
+          }
+          return;
+        }
+
+        if (previewPane.firstElementChild !== previewHeader) {
+          previewPane.insertBefore(previewHeader, previewPane.firstChild);
+        }
+      };
+
       const showPaneForMode = (mode) => {
+        attachHeaderForMode(mode);
         const hasDocument = mode === "readonly" || mode === "writable";
         emptyState.classList.toggle("hidden", hasDocument);
         previewPane.classList.toggle("hidden", mode !== "readonly");
         editorPane.classList.toggle("hidden", mode !== "writable");
       };
 
-      const applyDocumentChrome = (payload) => {
-        document.title = `${payload.file_name}${payload.dirty ? " *" : ""} - MarkHola`;
-        documentTitle.textContent = payload.title;
-        documentSubtitle.textContent = payload.file_name;
-        filePath.textContent = `Path: ${payload.file_path}`;
-        wordCount.innerHTML = `<strong>Words</strong> ${payload.word_count}`;
-        lineCount.innerHTML = `<strong>Lines</strong> ${payload.line_count}`;
-        modeState.innerHTML = `<strong>Mode</strong> ${payload.mode_label}`;
-        saveState.innerHTML = `<strong>Status</strong> ${payload.save_status}`;
-        documentBase.setAttribute("href", payload.base_url);
-        showPaneForMode(payload.mode);
-        window.showStatus({ message: payload.status_message, level: payload.dirty ? "warning" : "info" });
+      const renderTabs = (tabs) => {
+        if (!tabs.length) {
+          tabsBar.classList.add("hidden");
+          tabsBar.innerHTML = "";
+          return;
+        }
+
+        tabsBar.classList.remove("hidden");
+        tabsBar.innerHTML = tabs
+          .map((tab) => {
+            const activeClass = tab.active ? " active" : "";
+            const dirty = tab.dirty ? `<span class="document-tab__dirty" aria-hidden="true"></span>` : "";
+            return `
+              <div class="document-tab${activeClass}" data-document-id="${tab.document_id}" title="${escapeHtml(tab.title)}">
+                <span class="document-tab__name">${escapeHtml(tab.file_name)}</span>
+                ${dirty}
+                <button class="document-tab__close" type="button" data-close-document="${tab.document_id}" aria-label="Close ${escapeHtml(tab.file_name)}">&times;</button>
+              </div>
+            `;
+          })
+          .join("");
+      };
+
+      const resetWorkspaceChrome = (statusMessage) => {
+        document.title = "MarkHola";
+        documentTitle.textContent = "Preview";
+        documentSubtitle.textContent = "Use File > Open, Command+O, or drag a Markdown file into the window.";
+        filePath.textContent = "Path: No file opened";
+        wordCount.innerHTML = "<strong>Words</strong> 0";
+        lineCount.innerHTML = "<strong>Lines</strong> 0";
+        modeState.innerHTML = "<strong>Mode</strong> Readonly";
+        saveState.innerHTML = "<strong>Status</strong> Ready.";
+        documentBase.setAttribute("href", "");
+        showPaneForMode(null);
+        window.showStatus({ message: statusMessage || "Ready.", level: "info" });
+      };
+
+      const applyWorkspaceChrome = (payload) => {
+        renderTabs(payload.tabs || []);
+        const active = payload.active_document;
+
+        if (!active) {
+          resetWorkspaceChrome(payload.status_message);
+          return;
+        }
+
+        document.title = `${active.file_name}${active.dirty ? " *" : ""} - MarkHola`;
+        documentTitle.textContent = active.title;
+        documentSubtitle.textContent = active.file_name;
+        filePath.textContent = `Path: ${active.file_path}`;
+        wordCount.innerHTML = `<strong>Words</strong> ${active.word_count}`;
+        lineCount.innerHTML = `<strong>Lines</strong> ${active.line_count}`;
+        modeState.innerHTML = `<strong>Mode</strong> ${active.mode_label}`;
+        saveState.innerHTML = `<strong>Status</strong> ${active.save_status}`;
+        documentBase.setAttribute("href", active.base_url);
+        showPaneForMode(active.mode);
+        window.showStatus({ message: payload.status_message, level: active.dirty ? "warning" : "info" });
       };
 
       const escapeHtml = (value) =>
         value
           .replaceAll("&", "&amp;")
           .replaceAll("<", "&lt;")
-          .replaceAll(">", "&gt;");
+          .replaceAll(">", "&gt;")
+          .replaceAll('"', "&quot;")
+          .replaceAll("'", "&#39;");
 
       const ensureMermaidInitialized = () => {
         if (mermaidInitialized || !window.mermaid) return;
@@ -1938,7 +1641,7 @@ const APP_SHELL_HTML: &str = r##"<!DOCTYPE html>
           window.ipc.postMessage(JSON.stringify({ kind: "request-save" }));
         } else if (event.key.toLowerCase() === "w") {
           event.preventDefault();
-          window.ipc.postMessage(JSON.stringify({ kind: "request-exit" }));
+          window.ipc.postMessage(JSON.stringify({ kind: "close-current-document" }));
         } else if (event.key.toLowerCase() === "a" && isWritableMode()) {
           event.preventDefault();
           selectAllEditorText();
@@ -1949,6 +1652,28 @@ const APP_SHELL_HTML: &str = r##"<!DOCTYPE html>
       });
 
       document.addEventListener("click", (event) => {
+        const closeButton = event.target.closest("[data-close-document]");
+        if (closeButton) {
+          event.preventDefault();
+          event.stopPropagation();
+          window.ipc.postMessage(
+            JSON.stringify({
+              kind: "close-document",
+              documentId: Number(closeButton.getAttribute("data-close-document"))
+            })
+          );
+          return;
+        }
+
+        const tab = event.target.closest("[data-document-id]");
+        if (tab) {
+          const documentId = Number(tab.getAttribute("data-document-id"));
+          if (Number.isFinite(documentId)) {
+            window.ipc.postMessage(JSON.stringify({ kind: "activate-document", documentId }));
+          }
+          return;
+        }
+
         const link = event.target.closest("a[href]");
         if (!link) return;
 
@@ -1978,21 +1703,44 @@ const APP_SHELL_HTML: &str = r##"<!DOCTYPE html>
         status.dataset.level = payload.level || "info";
       };
 
-      window.renderDocument = (payload) => {
-        applyDocumentChrome(payload);
-        content.innerHTML = payload.html;
-        editor.value = payload.markdown;
-        updateEditorLineNumbers();
-        syncEditorScroll();
-        void renderReadonlyEnhancements();
-      };
+      const applyWorkspacePayload = (payload, forceRefresh) => {
+        applyWorkspaceChrome(payload);
+        const active = payload.active_document;
+        const nextDocumentId = active ? active.document_id : null;
+        const documentChanged = nextDocumentId !== currentDocumentId;
 
-      window.updateDocumentState = (payload) => {
-        applyDocumentChrome(payload);
-        if (payload.mode === "readonly") {
-          content.innerHTML = payload.html;
+        if (!active) {
+          currentDocumentId = null;
+          content.innerHTML = "";
+          editor.value = "";
+          updateEditorLineNumbers();
+          syncEditorScroll();
+          return;
+        }
+
+        if (forceRefresh || documentChanged || active.mode === "readonly") {
+          content.innerHTML = active.html;
+        }
+
+        if (forceRefresh || documentChanged) {
+          editor.value = active.markdown;
+          updateEditorLineNumbers();
+          syncEditorScroll();
+        }
+
+        currentDocumentId = nextDocumentId;
+
+        if (forceRefresh || documentChanged || active.mode === "readonly") {
           void renderReadonlyEnhancements();
         }
+      };
+
+      window.renderWorkspace = (payload) => {
+        applyWorkspacePayload(payload, true);
+      };
+
+      window.updateWorkspaceState = (payload) => {
+        applyWorkspacePayload(payload, false);
       };
 
       updateEditorLineNumbers();
@@ -2061,6 +1809,36 @@ mod macos_menu {
             fn toggle_document_mode(&self, _sender: Option<&AnyObject>) {
                 super::log_event("macos.menu.action", None, "macOS menu action toggleDocumentMode:", "");
                 super::dispatch_user_event(&self.ivars().proxy, "macos-menu", UserEvent::ToggleMode);
+            }
+
+            #[unsafe(method(closeCurrentDocument:))]
+            fn close_current_document(&self, _sender: Option<&AnyObject>) {
+                super::log_event("macos.menu.action", None, "macOS menu action closeCurrentDocument:", "");
+                super::dispatch_user_event(&self.ivars().proxy, "macos-menu", UserEvent::CloseCurrentDocument);
+            }
+
+            #[unsafe(method(activateNextDocument:))]
+            fn activate_next_document(&self, _sender: Option<&AnyObject>) {
+                super::log_event("macos.menu.action", None, "macOS menu action activateNextDocument:", "");
+                super::dispatch_user_event(&self.ivars().proxy, "macos-menu", UserEvent::ActivateNextDocument);
+            }
+
+            #[unsafe(method(activatePreviousDocument:))]
+            fn activate_previous_document(&self, _sender: Option<&AnyObject>) {
+                super::log_event("macos.menu.action", None, "macOS menu action activatePreviousDocument:", "");
+                super::dispatch_user_event(&self.ivars().proxy, "macos-menu", UserEvent::ActivatePreviousDocument);
+            }
+
+            #[unsafe(method(closeOtherDocuments:))]
+            fn close_other_documents(&self, _sender: Option<&AnyObject>) {
+                super::log_event("macos.menu.action", None, "macOS menu action closeOtherDocuments:", "");
+                super::dispatch_user_event(&self.ivars().proxy, "macos-menu", UserEvent::CloseOtherDocuments);
+            }
+
+            #[unsafe(method(closeAllDocuments:))]
+            fn close_all_documents(&self, _sender: Option<&AnyObject>) {
+                super::log_event("macos.menu.action", None, "macOS menu action closeAllDocuments:", "");
+                super::dispatch_user_event(&self.ivars().proxy, "macos-menu", UserEvent::CloseAllDocuments);
             }
 
             #[unsafe(method(showAboutPanel:))]
@@ -2180,7 +1958,7 @@ mod macos_menu {
             NSMenuItem::initWithTitle_action_keyEquivalent(
                 NSMenuItem::alloc(mtm),
                 ns_string!("Close"),
-                Some(sel!(exitApplication:)),
+                Some(sel!(closeCurrentDocument:)),
                 ns_string!("w"),
             )
         };
@@ -2284,6 +2062,90 @@ mod macos_menu {
         edit_menu.addItem(&select_all_item);
 
         edit_menu_item.setSubmenu(Some(&edit_menu));
+
+        let tab_menu_item = unsafe {
+            NSMenuItem::initWithTitle_action_keyEquivalent(
+                NSMenuItem::alloc(mtm),
+                ns_string!("Tab"),
+                None,
+                ns_string!(""),
+            )
+        };
+        main_menu.addItem(&tab_menu_item);
+
+        let tab_menu = NSMenu::initWithTitle(NSMenu::alloc(mtm), ns_string!("Tab"));
+
+        let next_tab_item = unsafe {
+            NSMenuItem::initWithTitle_action_keyEquivalent(
+                NSMenuItem::alloc(mtm),
+                ns_string!("Next Tab"),
+                Some(sel!(activateNextDocument:)),
+                ns_string!("]"),
+            )
+        };
+        unsafe { next_tab_item.setTarget(Some((&**target).as_ref())) };
+        next_tab_item.setKeyEquivalentModifierMask(
+            NSEventModifierFlags::Command | NSEventModifierFlags::Shift,
+        );
+        tab_menu.addItem(&next_tab_item);
+
+        let previous_tab_item = unsafe {
+            NSMenuItem::initWithTitle_action_keyEquivalent(
+                NSMenuItem::alloc(mtm),
+                ns_string!("Previous Tab"),
+                Some(sel!(activatePreviousDocument:)),
+                ns_string!("["),
+            )
+        };
+        unsafe { previous_tab_item.setTarget(Some((&**target).as_ref())) };
+        previous_tab_item.setKeyEquivalentModifierMask(
+            NSEventModifierFlags::Command | NSEventModifierFlags::Shift,
+        );
+        tab_menu.addItem(&previous_tab_item);
+
+        tab_menu.addItem(&NSMenuItem::separatorItem(mtm));
+
+        let close_tab_item = unsafe {
+            NSMenuItem::initWithTitle_action_keyEquivalent(
+                NSMenuItem::alloc(mtm),
+                ns_string!("Close Tab"),
+                Some(sel!(closeCurrentDocument:)),
+                ns_string!("w"),
+            )
+        };
+        unsafe { close_tab_item.setTarget(Some((&**target).as_ref())) };
+        close_tab_item.setKeyEquivalentModifierMask(NSEventModifierFlags::Command);
+        tab_menu.addItem(&close_tab_item);
+
+        let close_other_tabs_item = unsafe {
+            NSMenuItem::initWithTitle_action_keyEquivalent(
+                NSMenuItem::alloc(mtm),
+                ns_string!("Close Other Tabs"),
+                Some(sel!(closeOtherDocuments:)),
+                ns_string!("w"),
+            )
+        };
+        unsafe { close_other_tabs_item.setTarget(Some((&**target).as_ref())) };
+        close_other_tabs_item.setKeyEquivalentModifierMask(
+            NSEventModifierFlags::Command | NSEventModifierFlags::Option,
+        );
+        tab_menu.addItem(&close_other_tabs_item);
+
+        let close_all_tabs_item = unsafe {
+            NSMenuItem::initWithTitle_action_keyEquivalent(
+                NSMenuItem::alloc(mtm),
+                ns_string!("Close All Tabs"),
+                Some(sel!(closeAllDocuments:)),
+                ns_string!("w"),
+            )
+        };
+        unsafe { close_all_tabs_item.setTarget(Some((&**target).as_ref())) };
+        close_all_tabs_item.setKeyEquivalentModifierMask(
+            NSEventModifierFlags::Command | NSEventModifierFlags::Option | NSEventModifierFlags::Shift,
+        );
+        tab_menu.addItem(&close_all_tabs_item);
+
+        tab_menu_item.setSubmenu(Some(&tab_menu));
 
         app.setMainMenu(Some(&main_menu));
 

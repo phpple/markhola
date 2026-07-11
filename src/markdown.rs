@@ -394,4 +394,31 @@ mod tests {
         assert!(html.contains("<code>cargo test</code>"));
         assert!(!html.contains("code-block__badge"));
     }
+
+    #[test]
+    fn example_languages_keeps_mainstream_highlight_blocks() {
+        let html = render_html(include_str!("../examples/languages.md"));
+
+        assert!(html.contains("data-language=\"typescript\""));
+        assert!(html.contains("data-language=\"swift\""));
+        assert!(html.contains("data-language=\"kotlin\""));
+        assert!(html.contains("class=\"code-block__line-number\">1</span>"));
+    }
+
+    #[test]
+    fn example_mermaid_keeps_mermaid_render_containers() {
+        let html = render_html(include_str!("../examples/mermaid.md"));
+
+        assert!(html.contains("class=\"mermaid-block\""));
+        assert!(html.contains("class=\"mermaid-block__diagram\""));
+    }
+
+    #[test]
+    fn example_math_keeps_math_render_containers() {
+        let html = render_html(include_str!("../examples/math.md"));
+
+        assert!(html.contains("class=\"math math-inline\""));
+        assert!(html.contains("class=\"math math-display\""));
+        assert!(html.contains("class=\"math-block\""));
+    }
 }

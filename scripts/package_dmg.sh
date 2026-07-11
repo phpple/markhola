@@ -58,6 +58,7 @@ build_app_bundle() {
   echo "==> Assembling app bundle"
   cp "$ROOT_DIR/target/release/markhola" "$MACOS_DIR/$APP_NAME"
   chmod +x "$MACOS_DIR/$APP_NAME"
+  ditto "$ROOT_DIR/themes" "$RESOURCES_DIR/themes"
 
   cat > "$CONTENTS_DIR/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
@@ -183,12 +184,12 @@ create_dmg() {
 
   echo "==> Creating DMG"
   rm -f "$DMG_PATH"
-  hdiutil create \
-    -volname "$APP_NAME" \
-    -srcfolder "$DMG_ROOT" \
+  hdiutil makehybrid \
     -ov \
-    -format UDZO \
-    "$DMG_PATH"
+    -hfs \
+    -hfs-volume-name "$APP_NAME" \
+    "$DMG_ROOT" \
+    -o "$DMG_PATH"
   xattr -cr "$DMG_PATH"
 }
 

@@ -1,0 +1,71 @@
+#!/bin/zsh
+
+set -euo pipefail
+
+ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+WITH_PACKAGE=0
+
+for argument in "$@"; do
+  case "$argument" in
+    --with-package)
+      WITH_PACKAGE=1
+      ;;
+    *)
+      echo "Unknown argument: $argument" >&2
+      exit 1
+      ;;
+  esac
+done
+
+require_file() {
+  local path="$1"
+  if [[ ! -f "$ROOT_DIR/$path" ]]; then
+    echo "Missing required file: $path" >&2
+    exit 1
+  fi
+}
+
+run_packaging_with_retry() {
+  local attempt
+  for attempt in 1 2 3; do
+    if "$ROOT_DIR/scripts/package_dmg.sh"; then
+      return 0
+    fi
+
+    if [[ "$attempt" -eq 3 ]]; then
+      echo "Release packaging failed after ${attempt} attempts." >&2
+      exit 1
+    fi
+
+    echo "Retrying full packaging flow after transient failure (attempt ${attempt}/3)..." >&2
+    sleep 2
+  done
+}
+
+echo "==> Running automated regression tests"
+cargo test --manifest-path "$ROOT_DIR/Cargo.toml"
+
+echo "==> Building release binary"
+cargo build --release --manifest-path "$ROOT_DIR/Cargo.toml"
+
+echo "==> Verifying required regression fixtures"
+require_file "examples/basic.md"
+require_file "examples/languages.md"
+require_file "examples/mermaid.md"
+require_file "examples/math.md"
+require_file "examples/multi-document.md"
+require_file "themes/default/layout.css"
+require_file "scripts/release_regression_checklist.md"
+
+if [[ "$WITH_PACKAGE" -eq 1 ]]; then
+  echo "==> Packaging app bundle and DMG"
+  run_packaging_with_retry
+
+  APP_VERSION="$(sed -n 's/^version = "\(.*\)"/\1/p' "$ROOT_DIR/Cargo.toml" | head -n1)"
+  require_file "dist/MarkHola.app/Contents/Resources/themes/default/layout.css"
+  require_file "dist/MarkHola-${APP_VERSION}.dmg"
+fi
+
+echo "==> Automated regression checks passed"
+echo "==> Manual release checklist:"
+echo "    $ROOT_DIR/scripts/release_regression_checklist.md"
