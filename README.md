@@ -4,7 +4,7 @@ MarkHola is a lightweight desktop Markdown reader and editor built with Rust for
 
 ## Current Version
 
-- `v0.7.2`
+- `v0.7.3`
 
 ## Features
 

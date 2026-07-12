@@ -1,6 +1,6 @@
 # MarkHola Documentation
 
-Current version: `v0.7.2`
+Current version: `v0.7.3`
 
 ## What is MarkHola
 
