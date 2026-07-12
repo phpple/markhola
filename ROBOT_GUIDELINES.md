@@ -68,15 +68,16 @@ When implementing a new feature or a user-requested change in this repository, f
    - if the work is a new feature that did not exist before, increase the middle version number by `+1`
 3. If the user directly requests a feature, record or update that feature in `PLAN.MD` under the target version before implementation.
 4. Write a technical design document for that feature before coding.
-5. After the user accepts the technical design direction, refine the design document and add or update the relevant test cases.
-6. For user-visible features, also add or update a matching example Markdown file under `examples/` so users can verify the new capability after installing the new version.
-7. Start development only after the user confirms the design, tests, and example direction is OK.
-8. Implement the feature in the smallest complete scope that satisfies the confirmed design.
-9. Run the existing validation command for the affected code path.
-10. Update `README.md` so the documented version and user-visible features match the target release.
-11. Generate the DMG package after the implementation is complete.
-12. When the user explicitly says `提交xxx版本`, commit the important milestones incrementally with English one-sentence commit messages.
-13. Use the final release commit for that version as the tag target, and create a Git tag named `v版本号`.
+5. If the user adjusts the technical design document after it was written, re-read the latest version of that document before proceeding, and treat that re-read as a required step in the flow.
+6. After the user accepts the technical design direction, refine the design document and add or update the relevant test cases.
+7. For user-visible features, also add or update a matching example Markdown file under `examples/` so users can verify the new capability after installing the new version.
+8. Start development only after the user confirms the design, tests, and example direction is OK.
+9. Implement the feature in the smallest complete scope that satisfies the confirmed design.
+10. Run the existing validation command for the affected code path.
+11. Update `README.md` so the documented version and user-visible features match the target release.
+12. Generate the DMG package after the implementation is complete, and use the `UDZO` compressed image format for release packaging unless the user explicitly asks for a different format.
+13. When the user explicitly says `提交xxx版本`, commit the important milestones incrementally with English one-sentence commit messages.
+14. Use the final release commit for that version as the tag target, and create a Git tag named `v版本号`.
 
 For version tracking:
 

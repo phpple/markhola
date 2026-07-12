@@ -54,8 +54,33 @@ require_file "examples/languages.md"
 require_file "examples/mermaid.md"
 require_file "examples/math.md"
 require_file "examples/multi-document.md"
+require_file "examples/pdf-export.md"
 require_file "themes/default/layout.css"
 require_file "scripts/release_regression_checklist.md"
+
+echo "==> Running automated PDF export smoke test"
+SMOKE_EXPORT_PATH="$ROOT_DIR/dist/pdf-export-smoke.pdf"
+rm -f "$SMOKE_EXPORT_PATH"
+cargo run --release --bin markhola --manifest-path "$ROOT_DIR/Cargo.toml" -- --smoke-export \
+  "$ROOT_DIR/examples/basic.md" \
+  "$SMOKE_EXPORT_PATH"
+require_file "dist/pdf-export-smoke.pdf"
+if [[ ! -s "$SMOKE_EXPORT_PATH" ]]; then
+  echo "Smoke export produced an empty PDF file." >&2
+  exit 1
+fi
+
+echo "==> Running Mermaid PDF export smoke test"
+MERMAID_EXPORT_PATH="$ROOT_DIR/dist/mermaid-export-smoke.pdf"
+rm -f "$MERMAID_EXPORT_PATH"
+cargo run --release --bin markhola --manifest-path "$ROOT_DIR/Cargo.toml" -- --smoke-export \
+  "$ROOT_DIR/examples/mermaid.md" \
+  "$MERMAID_EXPORT_PATH"
+require_file "dist/mermaid-export-smoke.pdf"
+if [[ ! -s "$MERMAID_EXPORT_PATH" ]]; then
+  echo "Mermaid smoke export produced an empty PDF file." >&2
+  exit 1
+fi
 
 if [[ "$WITH_PACKAGE" -eq 1 ]]; then
   echo "==> Packaging app bundle and DMG"

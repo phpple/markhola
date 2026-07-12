@@ -4,13 +4,14 @@ MarkHola is a lightweight desktop Markdown reader and editor built with Rust for
 
 ## Current Version
 
-- `v0.7.0`
+- `v0.7.1`
 
 ## Features
 
 - Readonly and writable modes with `Command + /` mode switching
 - Open local `.md` and `.markdown` files
 - Open and keep multiple Markdown documents in one window
+- Export the current document to PDF from `File > Export PDF`
 - Load the app shell theme from an editable `themes/default/layout.css` file
 - Save the current document with `Command + S`
 - Render headings, links, images, tables, lists, blockquotes, and code blocks
