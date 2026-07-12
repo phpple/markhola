@@ -64,6 +64,8 @@ This is another markdown reader and exporter software.Written by AI, free are th
 
 ### v0.7.2
 1. Support for printing Markdown files
+2. Bug fixes
+   - Reload the current document correctly after using the page reload action
 
 ### v0.7.3
 1. In-page find support in readonly mode

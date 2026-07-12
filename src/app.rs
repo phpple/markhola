@@ -2,8 +2,9 @@ use std::ffi::{c_char, c_long, CStr};
 use std::fs::{OpenOptions, create_dir_all};
 use std::io::Write;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Once;
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::thread;
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -15,7 +16,7 @@ use tao::event::{ElementState, Event, StartCause, WindowEvent};
 use tao::event_loop::{ControlFlow, EventLoopBuilder, EventLoopProxy};
 use tao::keyboard::{KeyCode, ModifiersState};
 use tao::window::{Window, WindowBuilder};
-use wry::{WebView, WebViewBuilder};
+use wry::{PageLoadEvent, WebView, WebViewBuilder};
 
 use crate::document::{ActiveDocument, DocumentSnapshot, DocumentTabSnapshot, DocumentMode};
 use crate::file_io;
@@ -46,6 +47,7 @@ enum UserEvent {
     CloseOtherDocuments,
     CloseAllDocuments,
     ShellReady,
+    RecoverShell(String),
     OpenExternal(String),
     SaveDocument,
     ExportPdf,
@@ -308,6 +310,7 @@ fn dispatch_user_event(proxy: &EventLoopProxy<UserEvent>, stage_source: &'static
         UserEvent::CloseOtherDocuments => (None, "CloseOtherDocuments", format!("source={stage_source}")),
         UserEvent::CloseAllDocuments => (None, "CloseAllDocuments", format!("source={stage_source}")),
         UserEvent::ShellReady => (None, "ShellReady", format!("source={stage_source}")),
+        UserEvent::RecoverShell(url) => (None, "RecoverShell", format!("source={} url={url}", stage_source)),
         UserEvent::OpenExternal(href) => (None, "OpenExternal", format!("source={} href={href}", stage_source)),
         UserEvent::SaveDocument => (None, "SaveDocument", format!("source={stage_source}")),
         UserEvent::ExportPdf => (None, "ExportPdf", format!("source={stage_source}")),
@@ -346,6 +349,7 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
     let mut modifiers = ModifiersState::default();
     let mut workspace = DocumentWorkspace::new();
     let mut shell_ready = false;
+    let mut shell_recovery_pending = false;
     let mut pending_open_requests: Vec<OpenPathRequest> = Vec::new();
 
     let window = WindowBuilder::new()
@@ -355,11 +359,26 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
         .build(&event_loop)?;
 
     let ipc_proxy = proxy.clone();
+    let page_load_proxy = proxy.clone();
+    let suppress_blank_shell_recovery = Arc::new(AtomicBool::new(true));
+    let page_load_recovery_guard = Arc::clone(&suppress_blank_shell_recovery);
     let webview = WebViewBuilder::new()
         .with_html(app_shell_html())
         .with_devtools(true)
         .with_ipc_handler(move |request| {
             handle_ipc_message(&ipc_proxy, request.body().to_owned());
+        })
+        .with_on_page_load_handler(move |event, url| {
+            let event_name = match event {
+                PageLoadEvent::Started => "started",
+                PageLoadEvent::Finished => "finished",
+            };
+            log_event("webview.page_load", None, "webview page load event", format!("event={event_name} url={url}"));
+            if matches!(event, PageLoadEvent::Finished)
+                && should_dispatch_shell_recovery(&url, &page_load_recovery_guard)
+            {
+                dispatch_user_event(&page_load_proxy, "page-load", UserEvent::RecoverShell(url));
+            }
         })
         .build(&window)?;
 
@@ -580,6 +599,7 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
                 }
             }
             Event::UserEvent(UserEvent::ShellReady) => {
+                let shell_was_ready = shell_ready;
                 shell_ready = true;
                 log_event(
                     "shell.ready",
@@ -587,8 +607,32 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
                     "webview shell reported ready",
                     format!("pending_open_requests={}", pending_open_requests.len()),
                 );
+
+                if (shell_was_ready || shell_recovery_pending) && workspace.active_document().is_some() {
+                    shell_recovery_pending = false;
+                    match reload_workspace_documents_from_disk(&mut workspace) {
+                        Ok(reload_status) => {
+                            present_workspace(&window, &webview, &workspace, &reload_status, true);
+                        }
+                        Err(message) => {
+                            present_workspace(&window, &webview, &workspace, &message, true);
+                        }
+                    }
+                }
+
                 for request in pending_open_requests.drain(..) {
                     dispatch_user_event(&proxy, "shell-ready-flush", UserEvent::OpenPath(request));
+                }
+            }
+            Event::UserEvent(UserEvent::RecoverShell(url)) => {
+                log_event("user_event.received", None, "handling UserEvent::RecoverShell", format!("url={url}"));
+                shell_ready = false;
+                shell_recovery_pending = true;
+                suppress_blank_shell_recovery.store(true, Ordering::SeqCst);
+                if let Err(error) = webview.load_html(&app_shell_html()) {
+                    shell_recovery_pending = false;
+                    suppress_blank_shell_recovery.store(false, Ordering::SeqCst);
+                    render_status(&webview, &format!("Failed to recover the document view: {error}"), "error");
                 }
             }
             Event::UserEvent(UserEvent::OpenExternal(href)) => {
@@ -809,6 +853,44 @@ fn load_document(document_id: u64, path: &PathBuf) -> Result<ActiveDocument, Str
     let markdown = file_io::load_markdown(path)?;
     let base_url = file_io::directory_base_url(path)?;
     Ok(ActiveDocument::open_with_id(document_id, path.clone(), markdown, base_url))
+}
+
+fn reload_workspace_documents_from_disk(workspace: &mut DocumentWorkspace) -> Result<String, String> {
+    let document_ids = workspace.document_ids();
+    let mut reloaded = 0usize;
+    let mut skipped_dirty = 0usize;
+    let mut failures = Vec::new();
+
+    for document_id in document_ids {
+        let Some(document) = workspace.document_by_id_mut(document_id) else {
+            continue;
+        };
+
+        if document.is_dirty() {
+            skipped_dirty += 1;
+            continue;
+        }
+
+        let path = document.file_path().to_path_buf();
+        match file_io::load_markdown(&path) {
+            Ok(markdown) => {
+                document.reload_from_disk_markdown(markdown);
+                reloaded += 1;
+            }
+            Err(error) => failures.push(format!("{}: {error}", path.display())),
+        }
+    }
+
+    if let Some(first_failure) = failures.first() {
+        return Err(format!("Reload failed: {first_failure}"));
+    }
+
+    Ok(match (reloaded, skipped_dirty) {
+        (0, 0) => "Document reloaded.".to_string(),
+        (_, 0) => "Document reloaded.".to_string(),
+        (_, 1) => "Document reloaded. One unsaved tab was kept as-is.".to_string(),
+        (_, count) => format!("Document reloaded. {count} unsaved tabs were kept as-is."),
+    })
 }
 
 fn save_document(document: &mut ActiveDocument) -> Result<(), String> {
@@ -1057,6 +1139,15 @@ fn app_shell_html() -> String {
             "__MATHJAX_RUNTIME__",
             &render_assets::mathjax_runtime_for_inline_script(),
         )
+}
+
+fn should_recover_shell_on_page_load(url: &str) -> bool {
+    let trimmed = url.trim();
+    trimmed.is_empty() || trimmed == "about:blank"
+}
+
+fn should_dispatch_shell_recovery(url: &str, suppress_once: &AtomicBool) -> bool {
+    should_recover_shell_on_page_load(url) && !suppress_once.swap(false, Ordering::SeqCst)
 }
 
 const APP_SHELL_HTML: &str = r##"<!DOCTYPE html>
@@ -1756,6 +1847,70 @@ const APP_SHELL_HTML: &str = r##"<!DOCTYPE html>
   </body>
 </html>
 "##;
+
+#[cfg(test)]
+mod tests {
+    use std::fs;
+    use std::path::PathBuf;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    use crate::workspace::DocumentWorkspace;
+
+    use std::sync::atomic::AtomicBool;
+
+    use super::{
+        load_document, reload_workspace_documents_from_disk, should_dispatch_shell_recovery,
+        should_recover_shell_on_page_load,
+    };
+
+    fn temp_markdown_path(name: &str) -> PathBuf {
+        let stamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        std::env::temp_dir().join(format!("markhola-reload-{name}-{stamp}.md"))
+    }
+
+    #[test]
+    fn reload_workspace_refreshes_active_document_from_disk() {
+        let path = temp_markdown_path("reload");
+        fs::write(&path, "# Before\nold content").unwrap();
+
+        let mut workspace = DocumentWorkspace::new();
+        let document = load_document(1, &path).unwrap();
+        workspace.open_document(document);
+
+        fs::write(&path, "# After\nnew content").unwrap();
+
+        let status = reload_workspace_documents_from_disk(&mut workspace).unwrap();
+        let snapshot = workspace.active_document_snapshot().unwrap();
+
+        assert_eq!(status, "Document reloaded.");
+        assert_eq!(snapshot.markdown, "# After\nnew content");
+        assert!(snapshot.html.contains("After"));
+        assert!(snapshot.html.contains("new content"));
+        assert!(!snapshot.dirty);
+
+        let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn recovers_shell_when_page_load_finishes_on_blank_url() {
+        assert!(should_recover_shell_on_page_load("about:blank"));
+        assert!(should_recover_shell_on_page_load(""));
+        assert!(!should_recover_shell_on_page_load("file:///tmp/demo.md"));
+        assert!(!should_recover_shell_on_page_load("data:text/html,hello"));
+    }
+
+    #[test]
+    fn suppresses_the_expected_blank_finish_once_before_recovering_again() {
+        let suppress_once = AtomicBool::new(true);
+
+        assert!(!should_dispatch_shell_recovery("about:blank", &suppress_once));
+        assert!(should_dispatch_shell_recovery("about:blank", &suppress_once));
+        assert!(!should_dispatch_shell_recovery("file:///tmp/demo.md", &suppress_once));
+    }
+}
 
 #[cfg(target_os = "macos")]
 mod macos_menu {
