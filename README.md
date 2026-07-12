@@ -4,7 +4,7 @@ MarkHola is a lightweight desktop Markdown reader and editor built with Rust for
 
 ## Current Version
 
-- `v0.7.1`
+- `v0.7.2`
 
 ## Features
 
@@ -40,10 +40,28 @@ MarkHola is a lightweight desktop Markdown reader and editor built with Rust for
 ## Tech Stack
 
 - Rust
-- `tao`
-- `wry`
+
+## Third-Party Libraries
+
+- `block2`
+- `chardetng`
+- `encoding_rs`
+- `icns`
+- `lopdf`
+- `objc2`
+- `objc2-app-kit`
+- `objc2-core-foundation`
+- `objc2-foundation`
+- `objc2-web-kit`
+- `open`
 - `pulldown-cmark`
+- `rfd`
+- `serde`
+- `serde_json`
 - `syntect`
+- `tao`
+- `url`
+- `wry`
 
 ## Development
 
@@ -85,7 +103,6 @@ Create the macOS app bundle and DMG:
 - `examples/`: sample Markdown files for manual verification
 - `scripts/`: packaging scripts
 - `themes/`: directly editable app theme files
-- `tech-notes/`: technical design notes
 
 ## GitHub
 
