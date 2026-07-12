@@ -6,6 +6,7 @@ mod event_loop;
 mod export_actions;
 mod ipc;
 mod navigation_actions;
+pub(crate) mod platform;
 mod runtime;
 mod save_actions;
 mod shell_events;
@@ -29,6 +30,10 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
     );
 
     let (event_loop, mut runtime) = bootstrap::build_runtime()?;
+    runtime
+        .shell
+        .pending_open_requests
+        .extend(platform::startup_open_requests());
     workspace_view::sync_native_menu_state(&runtime.workspace);
 
     event_loop.run(move |event, _, control_flow| {

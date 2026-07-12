@@ -47,9 +47,9 @@ classDiagram
 ```mermaid
 stateDiagram-v2
   [*] --> Readonly
-  Readonly --> Writable: Command + /
-  Writable --> Readonly: Command + /
-  Writable --> Saved: Command + S
+  Readonly --> Writable: Command/Ctrl + /
+  Writable --> Readonly: Command/Ctrl + /
+  Writable --> Saved: Command/Ctrl + S
   Saved --> Writable: Continue editing
 ```
 

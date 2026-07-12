@@ -20,6 +20,10 @@ pub(super) fn handle_ipc_message(proxy: &EventLoopProxy<UserEvent>, payload: Str
             let ctx = new_action_context("ipc-open-file");
             dispatch_user_event(proxy, "ipc", UserEvent::OpenFile(ctx));
         }
+        Some("request-show-about") => dispatch_user_event(proxy, "ipc", UserEvent::ShowAbout),
+        Some("request-open-documentation") => {
+            dispatch_user_event(proxy, "ipc", UserEvent::OpenDocumentation)
+        }
         Some("shell-ready") => dispatch_user_event(proxy, "ipc", UserEvent::ShellReady),
         Some("toggle-mode") => dispatch_user_event(proxy, "ipc", UserEvent::ToggleMode),
         Some("close-current-document") => {

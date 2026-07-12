@@ -1,7 +1,7 @@
 use tao::event_loop::EventLoopProxy;
 use tao::keyboard::KeyCode;
 
-use super::{UserEvent, dispatch_user_event, log_event, new_action_context};
+use super::{UserEvent, dispatch_user_event, log_event, new_action_context, platform};
 
 pub(super) fn handle_command_shortcut(proxy: &EventLoopProxy<UserEvent>, key: KeyCode) {
     match key {
@@ -11,15 +11,15 @@ pub(super) fn handle_command_shortcut(proxy: &EventLoopProxy<UserEvent>, key: Ke
                 "keyboard.shortcut",
                 Some(ctx.event_id),
                 "keyboard shortcut triggered",
-                "key=Command+O",
+                format!("key={}", platform::primary_shortcut_label("O")),
             );
             dispatch_user_event(proxy, "keyboard", UserEvent::OpenFile(ctx));
         }
-        KeyCode::KeyS => emit_shortcut(proxy, UserEvent::SaveDocument, "Command+S"),
-        KeyCode::KeyP => emit_shortcut(proxy, UserEvent::PrintDocument, "Command+P"),
-        KeyCode::KeyF => emit_shortcut(proxy, UserEvent::OpenFind, "Command+F"),
-        KeyCode::KeyW => emit_shortcut(proxy, UserEvent::CloseCurrentDocument, "Command+W"),
-        KeyCode::Slash => emit_shortcut(proxy, UserEvent::ToggleMode, "Command+/"),
+        KeyCode::KeyS => emit_shortcut(proxy, UserEvent::SaveDocument, "S"),
+        KeyCode::KeyP => emit_shortcut(proxy, UserEvent::PrintDocument, "P"),
+        KeyCode::KeyF => emit_shortcut(proxy, UserEvent::OpenFind, "F"),
+        KeyCode::KeyW => emit_shortcut(proxy, UserEvent::CloseCurrentDocument, "W"),
+        KeyCode::Slash => emit_shortcut(proxy, UserEvent::ToggleMode, "/"),
         _ => {}
     }
 }
@@ -29,7 +29,7 @@ fn emit_shortcut(proxy: &EventLoopProxy<UserEvent>, event: UserEvent, key: &str)
         "keyboard.shortcut",
         None,
         "keyboard shortcut triggered",
-        format!("key={key}"),
+        format!("key={}", platform::primary_shortcut_label(key)),
     );
     dispatch_user_event(proxy, "keyboard", event);
 }

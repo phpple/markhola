@@ -79,6 +79,9 @@ This is another markdown reader and exporter software.Written by AI, free are th
 1. Support `[toc]`
 2. Enable to choose multiple markdown files while use "open file"
 
+### v0.8.0
+1. support windows 11
+
 ### v1.0.0
 1. Two models: Readonly、writeonly.
 2. Readonly:Default mode, you can open any markdown file.

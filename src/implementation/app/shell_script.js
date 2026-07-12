@@ -18,6 +18,11 @@
       const replaceOne = document.getElementById("replaceOne");
       const replaceAll = document.getElementById("replaceAll");
       const findClose = document.getElementById("findClose");
+      const primaryShortcutUsesMetaKey = __PRIMARY_SHORTCUT_IS_META__;
+      const primaryShortcutPressed = (event) =>
+        primaryShortcutUsesMetaKey
+          ? event.metaKey && !event.ctrlKey && !event.altKey
+          : event.ctrlKey && !event.metaKey && !event.altKey;
       const documentTitle = document.getElementById("documentTitle");
       const documentSubtitle = document.getElementById("documentSubtitle");
       const emptyState = document.getElementById("emptyState");
@@ -41,6 +46,9 @@
       const aboutBuild = document.getElementById("aboutBuild");
       const aboutGithub = document.getElementById("aboutGithub");
       const aboutCopy = document.getElementById("aboutCopy");
+      const documentCommandButtons = Array.from(
+        document.querySelectorAll("[data-requires-document=\"true\"]")
+      );
       let mermaidInitialized = false;
       let mathJaxReadyPromise = null;
       let currentDocumentId = null;
@@ -57,6 +65,16 @@
       };
 
       const EDITOR_INDENT = "    ";
+
+      const sendIpc = (kind) => {
+        window.ipc.postMessage(JSON.stringify({ kind }));
+      };
+
+      const setDocumentCommandAvailability = (enabled) => {
+        documentCommandButtons.forEach((button) => {
+          button.disabled = !enabled;
+        });
+      };
 
       const insertIndent = () => {
         const start = editor.selectionStart;
@@ -215,13 +233,14 @@
       const resetWorkspaceChrome = (statusMessage) => {
         document.title = "MarkHola";
         documentTitle.textContent = "Preview";
-        documentSubtitle.textContent = "Use File > Open, Command+O, or drag a Markdown file into the window.";
+        documentSubtitle.textContent = "__DOCUMENT_SUBTITLE__";
         filePath.textContent = "Path: No file opened";
         wordCount.innerHTML = "<strong>Words</strong> 0";
         lineCount.innerHTML = "<strong>Lines</strong> 0";
         modeState.innerHTML = "<strong>Mode</strong> Readonly";
         saveState.innerHTML = "<strong>Status</strong> Ready.";
         documentBase.setAttribute("href", "");
+        setDocumentCommandAvailability(false);
         showPaneForMode(null);
         window.showStatus({ message: statusMessage || "Ready.", level: "info" });
       };
@@ -244,6 +263,7 @@
         modeState.innerHTML = `<strong>Mode</strong> ${active.mode_label}`;
         saveState.innerHTML = `<strong>Status</strong> ${active.save_status}`;
         documentBase.setAttribute("href", active.base_url);
+        setDocumentCommandAvailability(true);
         showPaneForMode(active.mode);
         window.showStatus({ message: payload.status_message, level: active.dirty ? "warning" : "info" });
       };
@@ -797,7 +817,13 @@
           return;
         }
 
-        if (event.target === editor && event.ctrlKey && !event.metaKey && !event.altKey) {
+        if (
+          primaryShortcutUsesMetaKey &&
+          event.target === editor &&
+          event.ctrlKey &&
+          !event.metaKey &&
+          !event.altKey
+        ) {
           if (event.key.toLowerCase() === "a") {
             event.preventDefault();
             moveCaretToLineBoundary("start");
@@ -811,7 +837,7 @@
           }
         }
 
-        if (!event.metaKey || event.ctrlKey || event.altKey) {
+        if (!primaryShortcutPressed(event)) {
           return;
         }
 
@@ -825,26 +851,36 @@
           runEditorCommand("redo");
         } else if (event.key.toLowerCase() === "f") {
           event.preventDefault();
-          window.ipc.postMessage(JSON.stringify({ kind: "request-open-find" }));
+          sendIpc("request-open-find");
         } else if (event.key.toLowerCase() === "s") {
           event.preventDefault();
-          window.ipc.postMessage(JSON.stringify({ kind: "request-save" }));
+          sendIpc("request-save");
         } else if (event.key.toLowerCase() === "p") {
           event.preventDefault();
-          window.ipc.postMessage(JSON.stringify({ kind: "request-print" }));
+          sendIpc("request-print");
         } else if (event.key.toLowerCase() === "w") {
           event.preventDefault();
-          window.ipc.postMessage(JSON.stringify({ kind: "close-current-document" }));
+          sendIpc("close-current-document");
         } else if (event.key.toLowerCase() === "a" && isWritableMode()) {
           event.preventDefault();
           selectAllEditorText();
         } else if (event.key === "/") {
           event.preventDefault();
-          window.ipc.postMessage(JSON.stringify({ kind: "toggle-mode" }));
+          sendIpc("toggle-mode");
         }
       });
 
       document.addEventListener("click", (event) => {
+        const commandButton = event.target.closest("[data-command]");
+        if (commandButton) {
+          event.preventDefault();
+          const kind = commandButton.getAttribute("data-command") || "";
+          if (kind) {
+            sendIpc(kind);
+          }
+          return;
+        }
+
         const statusAction = event.target.closest("[data-open-path]");
         if (statusAction) {
           event.preventDefault();

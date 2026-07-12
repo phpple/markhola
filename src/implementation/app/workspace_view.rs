@@ -5,8 +5,10 @@ use crate::workspace::DocumentWorkspace;
 
 use super::{
     APP_AUTHOR, APP_BUILD_PLATFORM, APP_BUILD_TARGET, APP_GITHUB_URL, APP_VERSION, StatusPayload,
-    WINDOW_TITLE, WorkspacePresentation, macos_menu,
+    WINDOW_TITLE, WorkspacePresentation,
 };
+#[cfg(target_os = "macos")]
+use super::macos_menu;
 
 pub(super) fn present_workspace(
     window: &Window,
@@ -24,9 +26,9 @@ pub(super) fn present_workspace(
     }
 }
 
-pub(super) fn sync_native_menu_state(workspace: &DocumentWorkspace) {
+pub(super) fn sync_native_menu_state(_workspace: &DocumentWorkspace) {
     #[cfg(target_os = "macos")]
-    macos_menu::set_document_output_enabled(workspace.active_document().is_some());
+    macos_menu::set_document_output_enabled(_workspace.active_document().is_some());
 }
 
 pub(super) fn sync_workspace_state(
@@ -64,7 +66,7 @@ pub(super) fn render_status_with_action(
 pub(super) fn render_about(webview: &WebView) {
     let script = format!(
         "window.showAbout({{version:{}, author:{}, githubUrl:{}, buildTarget:{}, buildPlatform:{}}});",
-        serde_json::to_string(APP_VERSION).unwrap_or_else(|_| "\"0.7.0\"".to_string()),
+        serde_json::to_string(APP_VERSION).unwrap_or_else(|_| "\"0.8.0\"".to_string()),
         serde_json::to_string(APP_AUTHOR).unwrap_or_else(|_| "\"Ronnie Deng\"".to_string()),
         serde_json::to_string(APP_GITHUB_URL)
             .unwrap_or_else(|_| "\"https://github.com/phpple/markhola\"".to_string()),

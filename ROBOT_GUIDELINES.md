@@ -71,7 +71,7 @@ When implementing a new feature or a user-requested change in this repository, f
    - if the work is a bug fix or an improvement to an existing feature, increase the last version number by `+1`
    - if the work is a new feature that did not exist before, increase the middle version number by `+1`
 3. If the user directly requests a feature, record or update that feature in `PLAN.MD` under the target version before implementation.
-4. Write the technical design document and the matching test document for that feature together before coding.
+4. Write the technical design document and the matching test document for that feature together before coding, and store those documents under the `tech-notes/` directory.
 5. If the user adjusts either the design document or the test document after they were written, re-read the latest accepted versions before proceeding, and treat that re-read as a required step in the flow.
 6. After the user accepts the design and test direction, refine both documents together so the implementation scope and validation scope stay aligned.
 7. For user-visible features, also add or update a matching example Markdown file under `examples/` so users can verify the new capability after installing the new version.
@@ -88,7 +88,7 @@ For version tracking:
 
 - always keep the current development version aligned across implementation-related files
 - do not add feature work without making sure the target version is clear in the plan
-- keep `PLAN.MD`, `README.md`, technical design notes, tests, example files, implementation status, and release tag consistent with the same target version
+- keep `PLAN.MD`, `README.md`, technical design notes under `tech-notes/`, tests, example files, implementation status, and release tag consistent with the same target version
 
 ## 9. Rust Refactor Workflow
 

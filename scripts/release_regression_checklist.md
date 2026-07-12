@@ -15,7 +15,7 @@ Run this extended command when packaging a release candidate:
 ## Manual checks
 
 1. Empty launch close behavior
-   Expected: launch the app with no document opened, press `Command+W`, and the app exits.
+   Expected: launch the app with no document opened, press the primary close shortcut (`Command+W` on macOS or `Ctrl+W` on Windows), and the app exits.
 
 2. Basic Markdown rendering
    Open `examples/basic.md`.
@@ -36,9 +36,10 @@ Run this extended command when packaging a release candidate:
 
 6. PDF export regression
    Open `examples/pdf-export.md`.
-   Expected: `File > Export > PDF` exports the current active tab only.
-   Expected: the exported PDF keeps headings, table, code block, image, and math content.
-   Expected: exporting from writable mode includes unsaved edits.
+   Expected on macOS: `File > Export > PDF` exports the current active tab only.
+   Expected on macOS: the exported PDF keeps headings, table, code block, image, and math content.
+   Expected on macOS: exporting from writable mode includes unsaved edits.
+   Expected on Windows 11: `Export PDF` shows that PDF export is currently unavailable.
 
 7. HTML export regression
    Open `examples/basic.md`.
@@ -47,13 +48,14 @@ Run this extended command when packaging a release candidate:
 
 8. Print regression
    Open `examples/basic.md` and `examples/mermaid.md`.
-   Expected: `File > Print` and `Command + P` both open the system print panel for the current active tab.
-   Expected: the print panel content reflects the current document instead of the application shell.
-   Expected: writable-mode unsaved edits are included in the printed content.
+   Expected on macOS: `File > Print` and `Command + P` both open the system print panel for the current active tab.
+   Expected on macOS: the print panel content reflects the current document instead of the application shell.
+   Expected on macOS: writable-mode unsaved edits are included in the printed content.
+   Expected on Windows 11: `Print` shows that printing is currently unavailable.
 
 9. Find regression
    Open `examples/basic.md`.
-   Expected: `Command + F` and `Edit > Find` open the same find panel.
+   Expected: the primary find shortcut (`Command + F` on macOS or `Ctrl + F` on Windows) and `Edit > Find` on macOS open the same find panel.
    Expected: readonly mode highlights matches, shows a stable match count, and supports `Enter`, `Shift + Enter`, `Next`, and `Previous`.
    Expected: writable mode can find, replace, and replace all within the current tab without breaking dirty state updates.
 
@@ -68,7 +70,7 @@ Run this extended command when packaging a release candidate:
    Expected: closing the last opened document returns to the empty state instead of exiting.
 
 12. Tab menu regression
-   Expected: the `Tab` menu can switch tabs, close the current tab, close other tabs, and close all tabs.
+   Expected on macOS: the `Tab` menu can switch tabs, close the current tab, close other tabs, and close all tabs.
 
 13. Theme resource regression
    Expected: `themes/default/layout.css` changes are reflected by the app.

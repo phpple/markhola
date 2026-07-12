@@ -4,7 +4,7 @@ use tao::event_loop::ControlFlow;
 use super::runtime::AppRuntime;
 use super::window_events::handle_window_event;
 use super::workspace_view::render_status;
-use super::{UserEvent, log_event};
+use super::{UserEvent, log_event, platform};
 
 pub(super) fn handle_event(
     event: Event<'_, UserEvent>,
@@ -18,7 +18,7 @@ pub(super) fn handle_event(
             log_event("event_loop.init", None, "event loop init", "");
             render_status(
                 &runtime.webview,
-                "Ready. Open a Markdown file or press Command+O.",
+                &platform::ready_status_message(),
                 "info",
             );
         }

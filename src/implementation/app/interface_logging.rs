@@ -5,11 +5,10 @@ use std::thread;
 
 use super::current_date_stamp;
 use super::interface_clock::current_timestamp;
-use super::interface_constants::{DEBUG_LOG_DIR, DEBUG_LOG_FALLBACK_PATH};
 
 pub(crate) fn primary_debug_log_path() -> Option<PathBuf> {
     let date = current_date_stamp()?;
-    Some(Path::new(DEBUG_LOG_DIR).join(format!("markholo-{date}.log")))
+    Some(debug_log_dir().join(format!("markhola-{date}.log")))
 }
 
 pub(crate) fn append_log_line(path: &Path, line: &str) -> bool {
@@ -36,15 +35,16 @@ pub(crate) fn debug_log(message: impl AsRef<str>) {
         .map(|path| append_log_line(path, &line))
         .unwrap_or(false);
     if !wrote_primary {
+        let fallback_path = fallback_debug_log_path();
         let fallback_notice = format!(
             "ts={ts} pid={pid} tid={tid} stage=logger event_id=system msg=\"primary log path unavailable\" primary_path={} fallback_path={}\n",
             primary_debug_log_path()
                 .map(|path| path.display().to_string())
                 .unwrap_or_else(|| "<none>".to_string()),
-            DEBUG_LOG_FALLBACK_PATH,
+            fallback_path.display(),
         );
-        let _ = append_log_line(Path::new(DEBUG_LOG_FALLBACK_PATH), &fallback_notice);
-        let _ = append_log_line(Path::new(DEBUG_LOG_FALLBACK_PATH), &line);
+        let _ = append_log_line(&fallback_path, &fallback_notice);
+        let _ = append_log_line(&fallback_path, &line);
     }
 }
 
@@ -61,5 +61,29 @@ pub(crate) fn log_event(stage: &str, event_id: Option<u64>, message: &str, extra
         debug_log(format!(
             "stage={stage} event_id={event_id} msg=\"{message}\" {extra}"
         ));
+    }
+}
+
+fn debug_log_dir() -> PathBuf {
+    #[cfg(target_os = "windows")]
+    {
+        return std::env::temp_dir().join("markhola").join("logs");
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        Path::new("/var/log/markhola").to_path_buf()
+    }
+}
+
+fn fallback_debug_log_path() -> PathBuf {
+    #[cfg(target_os = "windows")]
+    {
+        return std::env::temp_dir().join("markhola").join("markhola.log");
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        Path::new("/tmp/markhola.log").to_path_buf()
     }
 }

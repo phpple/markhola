@@ -1,39 +1,38 @@
 # MarkHola
 
-MarkHola is a lightweight desktop Markdown reader and editor built with Rust for Apple Silicon Macs.
+MarkHola is a lightweight desktop Markdown reader and editor built with Rust for macOS and Windows 11.
 
 ## Current Version
 
-- `v0.7.3`
+- `v0.8.0`
 
 ## Features
 
-- Readonly and writable modes with `Command + /` mode switching
+- Readonly and writable modes with the platform-native primary shortcut (`Command + /` on macOS, `Ctrl + /` on Windows)
 - Open local `.md` and `.markdown` files
 - Open and keep multiple Markdown documents in one window
-- Export the current document to PDF from `File > Export > PDF`
+- Export the current document to PDF from `File > Export > PDF` on macOS
 - Export the current document to HTML from `File > Export > HTML`
-- Print the current document from `File > Print`
+- Print the current document from `File > Print` on macOS
 - Load the app shell theme from an editable `themes/default/layout.css` file
-- Save the current document with `Command + S`
-- Save the current document to another path with `File > Save As`
-- Open the bundled documentation from `Help > Documentation`
+- Save the current document with the platform-native primary shortcut (`Command + S` on macOS, `Ctrl + S` on Windows)
+- Save the current document to another path with `File > Save As` on macOS or the in-window action bar on Windows
+- Open the bundled documentation from `Help > Documentation` on macOS or the in-window action bar on Windows
 - Render headings, links, images, tables, lists, blockquotes, and code blocks
 - Syntax-highlighted fenced code blocks in readonly mode
 - Improved mainstream language highlight coverage for fenced code blocks
 - Mathematical expressions in readonly mode, including inline math, `$$...$$`, and fenced `math` blocks
 - Code block line numbers and hover language badges in readonly mode
 - Render Mermaid fenced code blocks in readonly mode
-- In-page find in readonly mode with `Command + F`
-- In-page find and replace in writable mode with `Command + F`
+- In-page find in readonly mode with the platform-native primary shortcut (`Command + F` on macOS, `Ctrl + F` on Windows)
+- In-page find and replace in writable mode with the platform-native primary shortcut (`Command + F` on macOS, `Ctrl + F` on Windows)
 - Writable editor line numbers
 - Writable editor shortcuts:
-  - `Command + A` select all
-  - `Command + C / V / X` copy, paste, and cut
-  - `Command + Z / R` undo and redo
-  - `Ctrl + A / E` move to line start and line end
+  - platform-native primary shortcut select all / copy / paste / cut
+  - platform-native primary shortcut undo / redo
+  - `Ctrl + A / E` move to line start and line end on macOS
   - `Tab / Shift + Tab` indent and outdent, including multi-line selections
-- `Command + W` close the current document tab
+- Close the current document tab with the platform-native primary shortcut (`Command + W` on macOS, `Ctrl + W` on Windows)
 - Drag and drop files into the window
 - Open Markdown files from Finder on macOS
 - Open external links in the default browser
@@ -42,6 +41,12 @@ MarkHola is a lightweight desktop Markdown reader and editor built with Rust for
 ## Platform
 
 - macOS on Apple Silicon
+- Windows 11
+
+## Platform Notes
+
+- PDF export and printing are currently available on macOS.
+- Windows 11 supports opening Markdown files from Explorer or the command line, reading, editing, saving, multi-tab documents, drag and drop, the in-window action bar, and platform-native `Ctrl` shortcuts.
 
 ## Tech Stack
 
@@ -110,6 +115,7 @@ Create the macOS app bundle and DMG:
 - `scripts/`: packaging scripts
 - `themes/`: directly editable app theme files
 - `assets/help/`: bundled in-app help markdown files
+- `tech-notes/`: release-specific technical design and validation notes
 
 ## GitHub
 

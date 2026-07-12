@@ -2,6 +2,7 @@ use tao::event::{ElementState, WindowEvent};
 use tao::event_loop::ControlFlow;
 
 use super::close_actions::resolve_all_pending_changes;
+use super::platform;
 use super::runtime::AppRuntime;
 use super::shortcuts::handle_command_shortcut;
 use super::workspace_view::render_status;
@@ -16,7 +17,9 @@ pub(super) fn handle_window_event(
         WindowEvent::CloseRequested => handle_close_requested(runtime, control_flow),
         WindowEvent::ModifiersChanged(next_modifiers) => runtime.modifiers = next_modifiers,
         WindowEvent::KeyboardInput { event, .. } => {
-            if event.state == ElementState::Released && runtime.modifiers.super_key() {
+            if event.state == ElementState::Released
+                && platform::primary_shortcut_is_pressed(&runtime.modifiers)
+            {
                 handle_command_shortcut(&runtime.proxy, event.physical_key);
             }
         }
@@ -30,7 +33,7 @@ pub(super) fn handle_window_event(
         WindowEvent::HoveredFileCancelled => {
             render_status(
                 &runtime.webview,
-                "Ready. Open a Markdown file or press Command+O.",
+                &platform::ready_status_message(),
                 "info",
             );
         }

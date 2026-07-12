@@ -1,19 +1,14 @@
 [package]
 name = "markhola"
-version = "0.7.3"
+version = "0.8.0"
 edition = "2024"
 
 [dependencies]
-block2 = { version = "=0.6.2", features = ["alloc"] }
 chardetng = "=0.1.17"
+chrono = "=0.4.45"
 encoding_rs = "=0.8.35"
 icns = { version = "=0.4.0", default-features = false, features = ["pngio"] }
 lopdf = "=0.35.0"
-objc2 = "=0.6.4"
-objc2-app-kit = { version = "=0.3.2", features = ["NSApplication", "NSDocumentController", "NSEvent", "NSMenu", "NSMenuItem", "NSPrintInfo", "NSPrintOperation", "NSResponder"] }
-objc2-core-foundation = { version = "=0.3.2", features = ["CFCGTypes", "objc2"] }
-objc2-foundation = { version = "=0.3.2", features = ["NSData", "NSDate", "NSError", "NSRunLoop", "NSString", "NSURL"] }
-objc2-web-kit = { version = "=0.3.2", features = ["WKContentWorld", "WKFrameInfo", "WKNavigation", "WKPDFConfiguration", "WKWebView", "WKWebViewConfiguration", "block2", "objc2-app-kit"] }
 open = "=5.3.6"
 pulldown-cmark = { version = "=0.13.4", default-features = false, features = ["html"] }
 rfd = "=0.15.4"
@@ -23,3 +18,14 @@ syntect = { version = "=5.3.0", default-features = false, features = ["default-f
 tao = "=0.34.8"
 url = "=2.5.8"
 wry = { version = "=0.53.5", features = ["devtools"] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+block2 = { version = "=0.6.2", features = ["alloc"] }
+objc2 = "=0.6.4"
+objc2-app-kit = { version = "=0.3.2", features = ["NSApplication", "NSDocumentController", "NSEvent", "NSMenu", "NSMenuItem", "NSPrintInfo", "NSPrintOperation", "NSResponder"] }
+objc2-core-foundation = { version = "=0.3.2", features = ["CFCGTypes", "objc2"] }
+objc2-foundation = { version = "=0.3.2", features = ["NSData", "NSDate", "NSError", "NSRunLoop", "NSString", "NSURL"] }
+objc2-web-kit = { version = "=0.3.2", features = ["WKContentWorld", "WKFrameInfo", "WKNavigation", "WKPDFConfiguration", "WKWebView", "WKWebViewConfiguration", "block2", "objc2-app-kit"] }
+
+[patch.crates-io]
+wry = { path = "vendor\\wry-0.53.5" }
