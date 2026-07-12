@@ -181,6 +181,14 @@ impl ActiveDocument {
         self.dirty = false;
     }
 
+    pub fn reload_from_disk_markdown(&mut self, markdown: String) {
+        self.saved_markdown = markdown.clone();
+        self.markdown = markdown;
+        self.refresh_metadata();
+        self.refresh_html();
+        self.dirty = false;
+    }
+
     pub fn window_title(&self) -> String {
         let dirty_marker = if self.dirty { " *" } else { "" };
         format!("{}{} - MarkHola", self.file_name(), dirty_marker)
@@ -264,5 +272,25 @@ mod tests {
         assert!(!snapshot.dirty);
         assert_eq!(snapshot.save_status, "Saved");
         assert!(snapshot.html.contains("Hello again"));
+    }
+
+    #[test]
+    fn reloading_from_disk_replaces_content_and_clears_dirty_state() {
+        let mut document = ActiveDocument::open_with_id(
+            1,
+            PathBuf::from("/tmp/demo.md"),
+            "# Hello".to_string(),
+            "file:///tmp/".to_string(),
+        );
+
+        document.update_markdown("# Unsaved".to_string());
+        assert!(document.is_dirty());
+
+        document.reload_from_disk_markdown("# Reloaded".to_string());
+        let snapshot = document.snapshot();
+
+        assert_eq!(snapshot.markdown, "# Reloaded");
+        assert!(snapshot.html.contains("Reloaded"));
+        assert!(!snapshot.dirty);
     }
 }
