@@ -20,6 +20,7 @@ use wry::{PageLoadEvent, WebView, WebViewBuilder};
 
 use crate::document::{ActiveDocument, DocumentSnapshot, DocumentTabSnapshot, DocumentMode};
 use crate::file_io;
+use crate::html_export::{self, HtmlExportOutcome};
 use crate::pdf_export::{self, PdfExportOutcome};
 use crate::printing::{self, PrintOutcome};
 use crate::render_assets;
@@ -53,6 +54,7 @@ enum UserEvent {
     SaveDocument,
     SaveDocumentAs,
     ExportPdf,
+    ExportHtml,
     PrintDocument,
     ToggleMode,
     EditorChanged(String),
@@ -318,6 +320,7 @@ fn dispatch_user_event(proxy: &EventLoopProxy<UserEvent>, stage_source: &'static
         UserEvent::SaveDocument => (None, "SaveDocument", format!("source={stage_source}")),
         UserEvent::SaveDocumentAs => (None, "SaveDocumentAs", format!("source={stage_source}")),
         UserEvent::ExportPdf => (None, "ExportPdf", format!("source={stage_source}")),
+        UserEvent::ExportHtml => (None, "ExportHtml", format!("source={stage_source}")),
         UserEvent::PrintDocument => (None, "PrintDocument", format!("source={stage_source}")),
         UserEvent::ToggleMode => (None, "ToggleMode", format!("source={stage_source}")),
         UserEvent::EditorChanged(markdown) => (
@@ -684,6 +687,31 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
                     }
                 }
             }
+            Event::UserEvent(UserEvent::ExportHtml) => {
+                log_event("user_event.received", None, "handling UserEvent::ExportHtml", "");
+                match workspace.active_document() {
+                    Some(document) => match html_export::export_document(document) {
+                        Ok(HtmlExportOutcome::Exported(path)) => {
+                            render_status_with_action(
+                                &webview,
+                                &format!("Exported HTML: {}", path.display()),
+                                "info",
+                                Some(&path.display().to_string()),
+                                Some("Open"),
+                            );
+                        }
+                        Ok(HtmlExportOutcome::Cancelled) => {
+                            render_status(&webview, "Export cancelled.", "info");
+                        }
+                        Err(message) => {
+                            render_status(&webview, &message, "error");
+                        }
+                    },
+                    None => {
+                        render_status(&webview, "No document opened.", "error");
+                    }
+                }
+            }
             Event::UserEvent(UserEvent::PrintDocument) => {
                 log_event("user_event.received", None, "handling UserEvent::PrintDocument", "");
                 match workspace.active_document() {
@@ -803,6 +831,9 @@ fn handle_ipc_message(proxy: &EventLoopProxy<UserEvent>, payload: String) {
         }
         Some("request-export-pdf") => {
             dispatch_user_event(proxy, "ipc", UserEvent::ExportPdf);
+        }
+        Some("request-export-html") => {
+            dispatch_user_event(proxy, "ipc", UserEvent::ExportHtml);
         }
         Some("request-print") => {
             dispatch_user_event(proxy, "ipc", UserEvent::PrintDocument);
@@ -2029,6 +2060,7 @@ mod macos_menu {
 
     thread_local! {
         static EXPORT_PDF_ITEM: RefCell<Option<Retained<NSMenuItem>>> = const { RefCell::new(None) };
+        static EXPORT_HTML_ITEM: RefCell<Option<Retained<NSMenuItem>>> = const { RefCell::new(None) };
         static SAVE_AS_ITEM: RefCell<Option<Retained<NSMenuItem>>> = const { RefCell::new(None) };
         static PRINT_ITEM: RefCell<Option<Retained<NSMenuItem>>> = const { RefCell::new(None) };
     }
@@ -2075,6 +2107,12 @@ mod macos_menu {
             fn export_pdf_document(&self, _sender: Option<&AnyObject>) {
                 super::log_event("macos.menu.action", None, "macOS menu action exportPdfDocument:", "");
                 super::dispatch_user_event(&self.ivars().proxy, "macos-menu", UserEvent::ExportPdf);
+            }
+
+            #[unsafe(method(exportHtmlDocument:))]
+            fn export_html_document(&self, _sender: Option<&AnyObject>) {
+                super::log_event("macos.menu.action", None, "macOS menu action exportHtmlDocument:", "");
+                super::dispatch_user_event(&self.ivars().proxy, "macos-menu", UserEvent::ExportHtml);
             }
 
             #[unsafe(method(printDocument:))]
@@ -2252,20 +2290,47 @@ mod macos_menu {
             *slot.borrow_mut() = Some(print_item.clone());
         });
 
+        let export_item = unsafe {
+            NSMenuItem::initWithTitle_action_keyEquivalent(
+                NSMenuItem::alloc(mtm),
+                ns_string!("Export"),
+                None,
+                ns_string!(""),
+            )
+        };
+        file_menu.addItem(&export_item);
+
+        let export_menu = NSMenu::initWithTitle(NSMenu::alloc(mtm), ns_string!("Export"));
         let export_pdf_item = unsafe {
             NSMenuItem::initWithTitle_action_keyEquivalent(
                 NSMenuItem::alloc(mtm),
-                ns_string!("Export PDF"),
+                ns_string!("PDF"),
                 Some(sel!(exportPdfDocument:)),
                 ns_string!(""),
             )
         };
         unsafe { export_pdf_item.setTarget(Some((&**target).as_ref())) };
         export_pdf_item.setEnabled(false);
-        file_menu.addItem(&export_pdf_item);
+        export_menu.addItem(&export_pdf_item);
         EXPORT_PDF_ITEM.with(|slot| {
             *slot.borrow_mut() = Some(export_pdf_item.clone());
         });
+
+        let export_html_item = unsafe {
+            NSMenuItem::initWithTitle_action_keyEquivalent(
+                NSMenuItem::alloc(mtm),
+                ns_string!("HTML"),
+                Some(sel!(exportHtmlDocument:)),
+                ns_string!(""),
+            )
+        };
+        unsafe { export_html_item.setTarget(Some((&**target).as_ref())) };
+        export_html_item.setEnabled(false);
+        export_menu.addItem(&export_html_item);
+        EXPORT_HTML_ITEM.with(|slot| {
+            *slot.borrow_mut() = Some(export_html_item.clone());
+        });
+        export_item.setSubmenu(Some(&export_menu));
 
         let toggle_item = unsafe {
             NSMenuItem::initWithTitle_action_keyEquivalent(
@@ -2489,6 +2554,11 @@ mod macos_menu {
             }
         });
         EXPORT_PDF_ITEM.with(|slot| {
+            if let Some(item) = slot.borrow().as_ref() {
+                item.setEnabled(enabled);
+            }
+        });
+        EXPORT_HTML_ITEM.with(|slot| {
             if let Some(item) = slot.borrow().as_ref() {
                 item.setEnabled(enabled);
             }
