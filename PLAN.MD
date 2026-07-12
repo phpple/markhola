@@ -64,7 +64,10 @@ This is another markdown reader and exporter software.Written by AI, free are th
 
 ### v0.7.2
 1. Support for printing Markdown files
-2. Bug fixes
+2. Save As for Markdown documents
+3. Export Markdown documents to HTML
+4. Built-in documentation entry in the Help menu
+5. Bug fixes
    - Reload the current document correctly after using the page reload action
 
 ### v0.7.3

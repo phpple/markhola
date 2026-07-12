@@ -36,24 +36,39 @@ Run this extended command when packaging a release candidate:
 
 6. PDF export regression
    Open `examples/pdf-export.md`.
-   Expected: `File > Export PDF` exports the current active tab only.
+   Expected: `File > Export > PDF` exports the current active tab only.
    Expected: the exported PDF keeps headings, table, code block, image, and math content.
    Expected: exporting from writable mode includes unsaved edits.
 
-7. Multi-document regression
+7. HTML export regression
+   Open `examples/basic.md`.
+   Expected: `File > Export > HTML` exports the current active tab as a standalone HTML file.
+   Expected: the exported HTML keeps rendered Markdown styling and can load Mermaid and math enhancements.
+
+8. Print regression
+   Open `examples/basic.md` and `examples/mermaid.md`.
+   Expected: `File > Print` and `Command + P` both open the system print panel for the current active tab.
+   Expected: the print panel content reflects the current document instead of the application shell.
+   Expected: writable-mode unsaved edits are included in the printed content.
+
+9. Documentation regression
+   Expected: `Help > Documentation` opens the bundled release help markdown file inside the app.
+
+10. Multi-document regression
    Open `examples/basic.md` and `examples/multi-document.md`.
    Expected: tabs stay pinned at the top while document content scrolls.
    Expected: switching tabs preserves each document state.
    Expected: closing one of several tabs keeps the app open.
    Expected: closing the last opened document returns to the empty state instead of exiting.
 
-8. Tab menu regression
+11. Tab menu regression
    Expected: the `Tab` menu can switch tabs, close the current tab, close other tabs, and close all tabs.
 
-9. Theme resource regression
+12. Theme resource regression
    Expected: `themes/default/layout.css` changes are reflected by the app.
    Expected: packaged app contains `Contents/Resources/themes/default/layout.css`.
+   Expected: packaged app contains `Contents/Resources/help/Documentation.md`.
 
-10. Inspect regression
+13. Inspect regression
    Right click in the preview area.
    Expected: the context menu still exposes `Inspect`.
