@@ -182,14 +182,14 @@ create_dmg() {
   ditto "$APP_DIR" "$DMG_ROOT/$APP_NAME.app"
   ln -s /Applications "$DMG_ROOT/Applications"
 
-  echo "==> Creating DMG"
+  echo "==> Creating compressed UDZO DMG"
   rm -f "$DMG_PATH"
-  hdiutil makehybrid \
+  hdiutil create \
+    -volname "$APP_NAME" \
+    -srcfolder "$DMG_ROOT" \
     -ov \
-    -hfs \
-    -hfs-volume-name "$APP_NAME" \
-    "$DMG_ROOT" \
-    -o "$DMG_PATH"
+    -format UDZO \
+    "$DMG_PATH"
   xattr -cr "$DMG_PATH"
 }
 

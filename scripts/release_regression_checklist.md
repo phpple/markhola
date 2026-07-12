@@ -34,20 +34,26 @@ Run this extended command when packaging a release candidate:
    Open `examples/math.md`.
    Expected: inline math, `$$...$$`, and fenced `math` blocks render correctly.
 
-6. Multi-document regression
+6. PDF export regression
+   Open `examples/pdf-export.md`.
+   Expected: `File > Export PDF` exports the current active tab only.
+   Expected: the exported PDF keeps headings, table, code block, image, and math content.
+   Expected: exporting from writable mode includes unsaved edits.
+
+7. Multi-document regression
    Open `examples/basic.md` and `examples/multi-document.md`.
    Expected: tabs stay pinned at the top while document content scrolls.
    Expected: switching tabs preserves each document state.
    Expected: closing one of several tabs keeps the app open.
    Expected: closing the last opened document returns to the empty state instead of exiting.
 
-7. Tab menu regression
+8. Tab menu regression
    Expected: the `Tab` menu can switch tabs, close the current tab, close other tabs, and close all tabs.
 
-8. Theme resource regression
+9. Theme resource regression
    Expected: `themes/default/layout.css` changes are reflected by the app.
    Expected: packaged app contains `Contents/Resources/themes/default/layout.css`.
 
-9. Inspect regression
+10. Inspect regression
    Right click in the preview area.
    Expected: the context menu still exposes `Inspect`.

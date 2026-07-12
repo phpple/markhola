@@ -57,21 +57,21 @@ This is another markdown reader and exporter software.Written by AI, free are th
 
 ### v0.7.0
 1. Multiple Markdown documents in one app window
-   - Open and keep multiple Markdown documents at the same time
-   - Switch between opened documents without losing readonly or writable state
-   - Preserve unsaved changes per document while switching tabs
-   - Allow closing the current document tab and keeping the app running when other tabs remain
 2. Theme directory for app shell styling
-   - Move the page shell CSS into a `themes/` directory
-   - Load the default theme from a directly editable CSS file at runtime
-   - Package the same theme into the macOS app bundle resources
-3. Release regression validation flow
-   - Add a reusable automated regression script for release validation
-   - Freeze a manual regression checklist for user-visible behaviors
-   - Add example-based regression tests so core rendering features are less likely to drift
 
 ### v0.7.1
 1. Support for Exporting PDF
+
+### v0.7.2
+1. Support for printing Markdown files
+
+### v0.7.3
+1. In-page find support in readonly mode
+2. In-page find and replace support in writable mode
+
+### v0.7.4
+1. Support `[toc]`
+2. Enable to choose multiple markdown files while use "open file"
 
 ### v1.0.0
 1. Two models: Readonly、writeonly.

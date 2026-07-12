@@ -145,12 +145,20 @@ impl ActiveDocument {
         &self.markdown
     }
 
+    pub fn base_url(&self) -> &str {
+        &self.base_url
+    }
+
     pub fn mode(&self) -> DocumentMode {
         self.mode
     }
 
     pub fn is_dirty(&self) -> bool {
         self.dirty
+    }
+
+    pub fn suggested_pdf_export_path(&self) -> PathBuf {
+        suggested_pdf_export_path(self.file_path())
     }
 
     pub fn update_markdown(&mut self, markdown: String) {
@@ -194,6 +202,17 @@ fn file_name(path: &Path) -> Option<String> {
     path.file_name()
         .and_then(|value| value.to_str())
         .map(ToOwned::to_owned)
+}
+
+pub fn suggested_pdf_export_path(path: &Path) -> PathBuf {
+    let stem = path
+        .file_stem()
+        .and_then(|value| value.to_str())
+        .filter(|value| !value.is_empty())
+        .or_else(|| path.file_name().and_then(|value| value.to_str()).filter(|value| !value.is_empty()))
+        .unwrap_or("document");
+
+    path.with_file_name(format!("{stem}.pdf"))
 }
 
 fn text_metrics(markdown: &str) -> (usize, usize) {

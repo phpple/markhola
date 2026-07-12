@@ -1,5 +1,5 @@
 use std::ffi::{c_char, c_long, CStr};
-use std::fs::{OpenOptions, create_dir_all, read_to_string};
+use std::fs::{OpenOptions, create_dir_all};
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::Once;
@@ -19,6 +19,8 @@ use wry::{WebView, WebViewBuilder};
 
 use crate::document::{ActiveDocument, DocumentSnapshot, DocumentTabSnapshot, DocumentMode};
 use crate::file_io;
+use crate::pdf_export::{self, PdfExportOutcome};
+use crate::render_assets;
 use crate::workspace::{DocumentWorkspace, WorkspaceOpenResult};
 
 const WINDOW_TITLE: &str = "MarkHola";
@@ -27,11 +29,6 @@ const APP_AUTHOR: &str = "Ronnie Deng";
 const APP_GITHUB_URL: &str = "https://github.com/phpple/markhola";
 const APP_BUILD_TARGET: &str = std::env::consts::ARCH;
 const APP_BUILD_PLATFORM: &str = std::env::consts::OS;
-const MERMAID_RUNTIME: &str = include_str!("../assets/mermaid/mermaid.min.js");
-const MATHJAX_RUNTIME: &str = include_str!("../assets/mathjax/tex-svg-full.js");
-const DEFAULT_APP_THEME_NAME: &str = "default";
-const DEFAULT_APP_THEME_LAYOUT_FILE: &str = "layout.css";
-const DEFAULT_APP_THEME_CSS: &str = include_str!("../themes/default/layout.css");
 const DEBUG_LOG_DIR: &str = "/var/log/markhola";
 const DEBUG_LOG_FALLBACK_PATH: &str = "/tmp/markhola.log";
 static NEXT_EVENT_ID: AtomicU64 = AtomicU64::new(1);
@@ -51,6 +48,7 @@ enum UserEvent {
     ShellReady,
     OpenExternal(String),
     SaveDocument,
+    ExportPdf,
     ToggleMode,
     EditorChanged(String),
     ShowAbout,
@@ -68,6 +66,8 @@ enum PendingChangesAction {
 struct StatusPayload<'a> {
     message: &'a str,
     level: &'a str,
+    action_path: Option<&'a str>,
+    action_label: Option<&'a str>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -229,7 +229,7 @@ fn debug_log(message: impl AsRef<str>) {
     }
 }
 
-fn log_event(stage: &str, event_id: Option<u64>, message: &str, extra: impl AsRef<str>) {
+pub(crate) fn log_event(stage: &str, event_id: Option<u64>, message: &str, extra: impl AsRef<str>) {
     let event_id = event_id
         .map(|id| format!("open-{id}"))
         .unwrap_or_else(|| "system".to_string());
@@ -310,6 +310,7 @@ fn dispatch_user_event(proxy: &EventLoopProxy<UserEvent>, stage_source: &'static
         UserEvent::ShellReady => (None, "ShellReady", format!("source={stage_source}")),
         UserEvent::OpenExternal(href) => (None, "OpenExternal", format!("source={} href={href}", stage_source)),
         UserEvent::SaveDocument => (None, "SaveDocument", format!("source={stage_source}")),
+        UserEvent::ExportPdf => (None, "ExportPdf", format!("source={stage_source}")),
         UserEvent::ToggleMode => (None, "ToggleMode", format!("source={stage_source}")),
         UserEvent::EditorChanged(markdown) => (
             None,
@@ -364,6 +365,7 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
 
     #[cfg(target_os = "macos")]
     macos_menu::install(&proxy)?;
+    sync_native_menu_state(&workspace);
 
     event_loop.run(move |event, _, control_flow| {
         *control_flow = ControlFlow::Wait;
@@ -600,6 +602,31 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
                 log_event("user_event.received", None, "handling UserEvent::SaveDocument", "");
                 save_active_document(&window, &webview, &mut workspace);
             }
+            Event::UserEvent(UserEvent::ExportPdf) => {
+                log_event("user_event.received", None, "handling UserEvent::ExportPdf", "");
+                match workspace.active_document() {
+                    Some(document) => match pdf_export::export_document(document) {
+                        Ok(PdfExportOutcome::Exported(path)) => {
+                            render_status_with_action(
+                                &webview,
+                                &format!("Exported PDF: {}", path.display()),
+                                "info",
+                                Some(&path.display().to_string()),
+                                Some("Open"),
+                            );
+                        }
+                        Ok(PdfExportOutcome::Cancelled) => {
+                            render_status(&webview, "Export cancelled.", "info");
+                        }
+                        Err(message) => {
+                            render_status(&webview, &message, "error");
+                        }
+                    },
+                    None => {
+                        render_status(&webview, "No document opened.", "error");
+                    }
+                }
+            }
             Event::UserEvent(UserEvent::ToggleMode) => {
                 log_event("user_event.received", None, "handling UserEvent::ToggleMode", "");
                 let status = if let Some(document) = workspace.active_document_mut() {
@@ -694,6 +721,9 @@ fn handle_ipc_message(proxy: &EventLoopProxy<UserEvent>, payload: String) {
         }
         Some("request-save") => {
             dispatch_user_event(proxy, "ipc", UserEvent::SaveDocument);
+        }
+        Some("request-export-pdf") => {
+            dispatch_user_event(proxy, "ipc", UserEvent::ExportPdf);
         }
         Some("request-exit") => {
             dispatch_user_event(proxy, "ipc", UserEvent::Exit);
@@ -917,6 +947,7 @@ fn present_workspace(
     full_render: bool,
 ) {
     update_window_title(window, workspace.active_window_title().as_deref());
+    sync_native_menu_state(workspace);
 
     if full_render {
         render_workspace(webview, workspace, status);
@@ -928,6 +959,11 @@ fn present_workspace(
 fn update_window_title(window: &Window, title: Option<&str>) {
     let title = title.unwrap_or(WINDOW_TITLE);
     window.set_title(&title);
+}
+
+fn sync_native_menu_state(workspace: &DocumentWorkspace) {
+    #[cfg(target_os = "macos")]
+    macos_menu::set_export_pdf_enabled(workspace.active_document().is_some());
 }
 
 fn workspace_presentation(workspace: &DocumentWorkspace, status: &str) -> WorkspacePresentation {
@@ -973,7 +1009,22 @@ fn sync_workspace_state(window: &Window, webview: &WebView, workspace: &Document
 }
 
 fn render_status(webview: &WebView, message: &str, level: &str) {
-    let payload = StatusPayload { message, level };
+    render_status_with_action(webview, message, level, None, None);
+}
+
+fn render_status_with_action(
+    webview: &WebView,
+    message: &str,
+    level: &str,
+    action_path: Option<&str>,
+    action_label: Option<&str>,
+) {
+    let payload = StatusPayload {
+        message,
+        level,
+        action_path,
+        action_label,
+    };
     let serialized = match serde_json::to_string(&payload) {
         Ok(serialized) => serialized,
         Err(_) => return,
@@ -997,86 +1048,15 @@ fn render_about(webview: &WebView) {
 
 fn app_shell_html() -> String {
     APP_SHELL_HTML
-        .replace("__APP_THEME__", &app_theme_css())
-        .replace("__MERMAID_RUNTIME__", &mermaid_runtime_script())
-        .replace("__MATHJAX_RUNTIME__", &mathjax_runtime_script())
-}
-
-fn app_theme_css() -> String {
-    for path in app_theme_candidates() {
-        match read_to_string(&path) {
-            Ok(css) => {
-                log_event(
-                    "theme.load",
-                    None,
-                    "loaded app theme from filesystem",
-                    format!("path={}", path.display()),
-                );
-                return css.replace("</style", "<\\/style");
-            }
-            Err(error) => {
-                log_event(
-                    "theme.load.skip",
-                    None,
-                    "failed to load candidate app theme",
-                    format!("path={} error={error}", path.display()),
-                );
-            }
-        }
-    }
-
-    log_event(
-        "theme.load.fallback",
-        None,
-        "using embedded fallback app theme",
-        format!("theme={DEFAULT_APP_THEME_NAME}"),
-    );
-    DEFAULT_APP_THEME_CSS.replace("</style", "<\\/style")
-}
-
-fn app_theme_candidates() -> Vec<PathBuf> {
-    let mut candidates = Vec::new();
-
-    if let Ok(current_dir) = std::env::current_dir() {
-        candidates.push(
-            current_dir
-                .join("themes")
-                .join(DEFAULT_APP_THEME_NAME)
-                .join(DEFAULT_APP_THEME_LAYOUT_FILE),
-        );
-    }
-
-    if let Ok(current_exe) = std::env::current_exe() {
-        if let Some(executable_dir) = current_exe.parent() {
-            candidates.push(
-                executable_dir
-                    .join("themes")
-                    .join(DEFAULT_APP_THEME_NAME)
-                    .join(DEFAULT_APP_THEME_LAYOUT_FILE),
-            );
-        }
-
-        if let Some(contents_dir) = current_exe.parent().and_then(Path::parent) {
-            candidates.push(
-                contents_dir
-                    .join("Resources")
-                    .join("themes")
-                    .join(DEFAULT_APP_THEME_NAME)
-                    .join(DEFAULT_APP_THEME_LAYOUT_FILE),
-            );
-        }
-    }
-
-    candidates.dedup();
-    candidates
-}
-
-fn mermaid_runtime_script() -> String {
-    MERMAID_RUNTIME.replace("</script", "<\\/script")
-}
-
-fn mathjax_runtime_script() -> String {
-    MATHJAX_RUNTIME.replace("</script", "<\\/script")
+        .replace("__APP_THEME__", &render_assets::load_app_theme_css_for_inline_style())
+        .replace(
+            "__MERMAID_RUNTIME__",
+            &render_assets::mermaid_runtime_for_inline_script(),
+        )
+        .replace(
+            "__MATHJAX_RUNTIME__",
+            &render_assets::mathjax_runtime_for_inline_script(),
+        )
 }
 
 const APP_SHELL_HTML: &str = r##"<!DOCTYPE html>
@@ -1652,6 +1632,16 @@ const APP_SHELL_HTML: &str = r##"<!DOCTYPE html>
       });
 
       document.addEventListener("click", (event) => {
+        const statusAction = event.target.closest("[data-open-path]");
+        if (statusAction) {
+          event.preventDefault();
+          const path = statusAction.getAttribute("data-open-path") || "";
+          if (path) {
+            window.ipc.postMessage(JSON.stringify({ kind: "open-external", href: path }));
+          }
+          return;
+        }
+
         const closeButton = event.target.closest("[data-close-document]");
         if (closeButton) {
           event.preventDefault();
@@ -1699,7 +1689,13 @@ const APP_SHELL_HTML: &str = r##"<!DOCTYPE html>
       );
 
       window.showStatus = (payload) => {
-        status.textContent = payload.message;
+        const actionPath = payload.action_path || "";
+        const actionLabel = payload.action_label || "";
+        if (actionPath && actionLabel) {
+          status.innerHTML = `${escapeHtml(payload.message)} <a href=\"#\" class=\"status__action\" data-open-path=\"${escapeHtml(actionPath)}\">${escapeHtml(actionLabel)}</a>`;
+        } else {
+          status.textContent = payload.message;
+        }
         status.dataset.level = payload.level || "info";
       };
 
@@ -1763,7 +1759,9 @@ const APP_SHELL_HTML: &str = r##"<!DOCTYPE html>
 
 #[cfg(target_os = "macos")]
 mod macos_menu {
+    use std::cell::RefCell;
     use std::error::Error;
+
     use objc2::rc::Retained;
     use objc2::runtime::AnyObject;
     use objc2::{DefinedClass, MainThreadOnly, define_class, sel};
@@ -1772,6 +1770,10 @@ mod macos_menu {
     use tao::event_loop::EventLoopProxy;
 
     use super::UserEvent;
+
+    thread_local! {
+        static EXPORT_PDF_ITEM: RefCell<Option<Retained<NSMenuItem>>> = const { RefCell::new(None) };
+    }
 
     #[derive(Debug)]
     struct ProxyIvars {
@@ -1803,6 +1805,12 @@ mod macos_menu {
             fn save_menu_document(&self, _sender: Option<&AnyObject>) {
                 super::log_event("macos.menu.action", None, "macOS menu action saveMenuDocument:", "");
                 super::dispatch_user_event(&self.ivars().proxy, "macos-menu", UserEvent::SaveDocument);
+            }
+
+            #[unsafe(method(exportPdfDocument:))]
+            fn export_pdf_document(&self, _sender: Option<&AnyObject>) {
+                super::log_event("macos.menu.action", None, "macOS menu action exportPdfDocument:", "");
+                super::dispatch_user_event(&self.ivars().proxy, "macos-menu", UserEvent::ExportPdf);
             }
 
             #[unsafe(method(toggleDocumentMode:))]
@@ -1940,6 +1948,21 @@ mod macos_menu {
         unsafe { save_item.setTarget(Some((&**target).as_ref())) };
         save_item.setKeyEquivalentModifierMask(NSEventModifierFlags::Command);
         file_menu.addItem(&save_item);
+
+        let export_pdf_item = unsafe {
+            NSMenuItem::initWithTitle_action_keyEquivalent(
+                NSMenuItem::alloc(mtm),
+                ns_string!("Export PDF"),
+                Some(sel!(exportPdfDocument:)),
+                ns_string!(""),
+            )
+        };
+        unsafe { export_pdf_item.setTarget(Some((&**target).as_ref())) };
+        export_pdf_item.setEnabled(false);
+        file_menu.addItem(&export_pdf_item);
+        EXPORT_PDF_ITEM.with(|slot| {
+            *slot.borrow_mut() = Some(export_pdf_item.clone());
+        });
 
         let toggle_item = unsafe {
             NSMenuItem::initWithTitle_action_keyEquivalent(
@@ -2148,8 +2171,14 @@ mod macos_menu {
         tab_menu_item.setSubmenu(Some(&tab_menu));
 
         app.setMainMenu(Some(&main_menu));
-
         let _ = NSApp(mtm);
         Ok(())
+    }
+    pub fn set_export_pdf_enabled(enabled: bool) {
+        EXPORT_PDF_ITEM.with(|slot| {
+            if let Some(item) = slot.borrow().as_ref() {
+                item.setEnabled(enabled);
+            }
+        });
     }
 }
