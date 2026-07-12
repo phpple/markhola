@@ -44,6 +44,10 @@ Future ideas can be listed as optional follow-up items, but they must be clearly
 
 When code changes are ready, prefer committing them incrementally by feature instead of batching many unrelated updates into one commit.
 
+For user-visible work, each independently understandable feature should normally have its own commit.
+
+Do not combine multiple user-visible features into one implementation commit unless the user explicitly agrees to that batching.
+
 Commit messages should:
 
 - be written in English
@@ -76,8 +80,9 @@ When implementing a new feature or a user-requested change in this repository, f
 10. Run the existing validation command for the affected code path.
 11. Update `README.md` so the documented version and user-visible features match the target release.
 12. Generate the DMG package after the implementation is complete, and use the `UDZO` compressed image format for release packaging unless the user explicitly asks for a different format.
-13. When the user explicitly says `提交xxx版本`, commit the important milestones incrementally with English one-sentence commit messages.
-14. Use the final release commit for that version as the tag target, and create a Git tag named `v版本号`.
+13. When the user explicitly says `提交xxx版本`, split the implementation history by small feature first, and keep each user-visible feature in its own English one-sentence commit whenever practical.
+14. After the feature commits, place documentation, packaging, validation, or release-summary adjustments in later commits instead of folding them back into the feature commits unless they are inseparable from a specific feature.
+15. Use the final release commit for that version as the tag target, and create a Git tag named `v版本号`.
 
 For version tracking:
 

@@ -55,6 +55,7 @@ require_file "examples/mermaid.md"
 require_file "examples/math.md"
 require_file "examples/multi-document.md"
 require_file "examples/pdf-export.md"
+require_file "assets/help/Documentation.md"
 require_file "themes/default/layout.css"
 require_file "scripts/release_regression_checklist.md"
 
@@ -82,12 +83,31 @@ if [[ ! -s "$MERMAID_EXPORT_PATH" ]]; then
   exit 1
 fi
 
+echo "==> Running HTML export smoke test"
+HTML_EXPORT_PATH="$ROOT_DIR/dist/html-export-smoke.html"
+rm -f "$HTML_EXPORT_PATH"
+cargo run --release --bin markhola --manifest-path "$ROOT_DIR/Cargo.toml" -- --smoke-export-html \
+  "$ROOT_DIR/examples/basic.md" \
+  "$HTML_EXPORT_PATH"
+require_file "dist/html-export-smoke.html"
+if [[ ! -s "$HTML_EXPORT_PATH" ]]; then
+  echo "HTML smoke export produced an empty file." >&2
+  exit 1
+fi
+
+echo "==> Running print preparation smoke test"
+cargo run --release --bin markhola --manifest-path "$ROOT_DIR/Cargo.toml" -- --smoke-print-prepare \
+  "$ROOT_DIR/examples/basic.md"
+cargo run --release --bin markhola --manifest-path "$ROOT_DIR/Cargo.toml" -- --smoke-print-prepare \
+  "$ROOT_DIR/examples/mermaid.md"
+
 if [[ "$WITH_PACKAGE" -eq 1 ]]; then
   echo "==> Packaging app bundle and DMG"
   run_packaging_with_retry
 
   APP_VERSION="$(sed -n 's/^version = "\(.*\)"/\1/p' "$ROOT_DIR/Cargo.toml" | head -n1)"
   require_file "dist/MarkHola.app/Contents/Resources/themes/default/layout.css"
+  require_file "dist/MarkHola.app/Contents/Resources/help/Documentation.md"
   require_file "dist/MarkHola-${APP_VERSION}.dmg"
 fi
 
