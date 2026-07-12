@@ -189,6 +189,14 @@ impl ActiveDocument {
         self.dirty = false;
     }
 
+    pub fn replace_file_path(&mut self, path: PathBuf, base_url: String) {
+        self.file_name = file_name(&path).unwrap_or_else(|| "Untitled".to_string());
+        self.canonical_path = std::fs::canonicalize(&path).unwrap_or_else(|_| path.clone());
+        self.file_path = path;
+        self.base_url = base_url;
+        self.mark_saved();
+    }
+
     pub fn window_title(&self) -> String {
         let dirty_marker = if self.dirty { " *" } else { "" };
         format!("{}{} - MarkHola", self.file_name(), dirty_marker)

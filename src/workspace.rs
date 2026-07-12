@@ -144,6 +144,17 @@ impl DocumentWorkspace {
             .find(|document| document.canonical_path() == canonical.as_path())
             .map(ActiveDocument::id)
     }
+
+    pub fn find_by_path_excluding(&self, path: &Path, excluded_document_id: u64) -> Option<u64> {
+        let canonical = std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
+        self.documents
+            .iter()
+            .find(|document| {
+                document.id() != excluded_document_id
+                    && document.canonical_path() == canonical.as_path()
+            })
+            .map(ActiveDocument::id)
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -154,7 +165,7 @@ pub enum WorkspaceOpenResult {
 
 #[cfg(test)]
 mod tests {
-    use std::path::PathBuf;
+    use std::path::{Path, PathBuf};
 
     use crate::document::ActiveDocument;
 
@@ -206,5 +217,22 @@ mod tests {
         assert_eq!(closed.id(), 2);
         assert_eq!(workspace.active_document_id(), Some(3));
         assert_eq!(workspace.tab_snapshots().len(), 2);
+    }
+
+    #[test]
+    fn find_by_path_excluding_skips_the_requested_document() {
+        let mut workspace = DocumentWorkspace::new();
+
+        workspace.open_document(document(1, "/tmp/one.md"));
+        workspace.open_document(document(2, "/tmp/two.md"));
+
+        assert_eq!(
+            workspace.find_by_path_excluding(Path::new("/tmp/one.md"), 1),
+            None
+        );
+        assert_eq!(
+            workspace.find_by_path_excluding(Path::new("/tmp/two.md"), 1),
+            Some(2)
+        );
     }
 }
