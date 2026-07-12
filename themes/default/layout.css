@@ -56,6 +56,7 @@ body {
 
 .preview-header {
   display: flex;
+  flex-wrap: wrap;
   justify-content: space-between;
   gap: 12px;
   padding: 14px 20px;
@@ -190,6 +191,88 @@ body {
 }
 
 .status[data-level="error"] {
+  color: var(--danger);
+}
+
+.find-panel {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-left: auto;
+  padding: 10px 12px;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.88);
+  border: 1px solid rgba(92, 74, 52, 0.12);
+  box-shadow: 0 12px 28px rgba(56, 41, 28, 0.1);
+}
+
+.find-panel__group,
+.find-panel__actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.find-panel__replace {
+  min-width: 180px;
+}
+
+.find-panel__input {
+  min-width: 170px;
+  height: 34px;
+  padding: 0 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(92, 74, 52, 0.16);
+  background: rgba(255, 255, 255, 0.96);
+  color: var(--text);
+  font: 13px/1.2 var(--font-ui);
+  outline: none;
+}
+
+.find-panel__input:focus {
+  border-color: rgba(15, 118, 110, 0.28);
+  box-shadow: 0 0 0 4px rgba(15, 118, 110, 0.08);
+}
+
+.find-panel__count {
+  min-width: 64px;
+  color: var(--muted);
+  font: 12px/1.2 var(--font-ui);
+  text-align: right;
+}
+
+.find-panel__button {
+  appearance: none;
+  height: 34px;
+  padding: 0 12px;
+  border-radius: 999px;
+  border: 1px solid rgba(92, 74, 52, 0.12);
+  background: rgba(255, 255, 255, 0.96);
+  color: var(--text);
+  cursor: pointer;
+  font: 12px/1 var(--font-ui);
+  transition:
+    background 120ms ease,
+    border-color 120ms ease,
+    color 120ms ease,
+    opacity 120ms ease;
+}
+
+.find-panel__button:hover:not(:disabled) {
+  background: rgba(15, 118, 110, 0.08);
+  border-color: rgba(15, 118, 110, 0.18);
+}
+
+.find-panel__button:disabled {
+  opacity: 0.46;
+  cursor: default;
+}
+
+.find-panel__button--ghost:hover:not(:disabled) {
+  background: rgba(185, 28, 28, 0.08);
+  border-color: rgba(185, 28, 28, 0.14);
   color: var(--danger);
 }
 
@@ -576,6 +659,17 @@ body {
   color: #8b1e1e;
   font-family: var(--font-ui);
   font-size: 14px;
+}
+
+.find-match {
+  padding: 0.04em 0.12em;
+  border-radius: 0.22em;
+  background: rgba(251, 191, 36, 0.3);
+}
+
+.find-match--active {
+  background: rgba(251, 191, 36, 0.72);
+  box-shadow: 0 0 0 2px rgba(251, 191, 36, 0.24);
 }
 
 .hidden {

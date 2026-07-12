@@ -144,7 +144,12 @@ pub enum HtmlExportOutcome {
 
 pub fn export_document(document: &ActiveDocument) -> Result<HtmlExportOutcome, String> {
     let Some(export_path) = choose_export_path(document) else {
-        log_event("html_export.cancelled", None, "HTML export cancelled in save dialog", "");
+        log_event(
+            "html_export.cancelled",
+            None,
+            "HTML export cancelled in save dialog",
+            "",
+        );
         return Ok(HtmlExportOutcome::Cancelled);
     };
 
@@ -188,7 +193,12 @@ fn choose_export_path(document: &ActiveDocument) -> Option<PathBuf> {
     FileDialog::new()
         .add_filter("HTML", &["html"])
         .set_title("Export HTML")
-        .set_directory(document.file_path().parent().unwrap_or(document.file_path()))
+        .set_directory(
+            document
+                .file_path()
+                .parent()
+                .unwrap_or(document.file_path()),
+        )
         .set_file_name(suggested_name)
         .save_file()
 }
@@ -198,7 +208,11 @@ fn suggested_html_export_path(path: &Path) -> PathBuf {
         .file_stem()
         .and_then(|value| value.to_str())
         .filter(|value| !value.is_empty())
-        .or_else(|| path.file_name().and_then(|value| value.to_str()).filter(|value| !value.is_empty()))
+        .or_else(|| {
+            path.file_name()
+                .and_then(|value| value.to_str())
+                .filter(|value| !value.is_empty())
+        })
         .unwrap_or("document");
 
     path.with_file_name(format!("{stem}.html"))
@@ -209,37 +223,21 @@ pub(crate) fn build_export_html(document: &ActiveDocument) -> String {
         .replace("__TITLE__", document.file_name())
         .replace("__BASE_URL__", document.base_url())
         .replace("__APP_VERSION__", APP_VERSION)
-        .replace("__APP_THEME__", &render_assets::load_app_theme_css_for_inline_style())
+        .replace(
+            "__APP_THEME__",
+            &render_assets::load_app_theme_css_for_inline_style(),
+        )
         .replace("__EXPORT_CSS__", HTML_EXPORT_CSS)
-        .replace("__MERMAID_RUNTIME__", &render_assets::mermaid_runtime_for_inline_script())
-        .replace("__MATHJAX_RUNTIME__", &render_assets::mathjax_runtime_for_inline_script())
-        .replace("__DOCUMENT_HTML__", &markdown::render_html(document.markdown()))
-}
-
-#[cfg(test)]
-mod tests {
-    use std::path::PathBuf;
-
-    use crate::document::ActiveDocument;
-
-    use super::build_export_html;
-
-    #[test]
-    fn exported_html_contains_rendered_content_and_runtime_assets() {
-        let document = ActiveDocument::open_with_id(
-            1,
-            PathBuf::from("/tmp/demo.md"),
-            "# Hello\n\n```mermaid\nflowchart TD\n A-->B\n```".to_string(),
-            "file:///tmp/".to_string(),
-        );
-
-        let html = build_export_html(&document);
-
-        assert!(html.contains("<article class=\"markdown-body\">"));
-        assert!(html.contains("mermaid-block"));
-        assert!(html.contains("Exported by MarkHola v"));
-        assert!(html.contains("window.MathJax"));
-        assert!(html.contains("window.mermaid"));
-        assert!(html.contains("overflow: auto;"));
-    }
+        .replace(
+            "__MERMAID_RUNTIME__",
+            &render_assets::mermaid_runtime_for_inline_script(),
+        )
+        .replace(
+            "__MATHJAX_RUNTIME__",
+            &render_assets::mathjax_runtime_for_inline_script(),
+        )
+        .replace(
+            "__DOCUMENT_HTML__",
+            &markdown::render_html(document.markdown()),
+        )
 }

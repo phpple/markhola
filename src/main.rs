@@ -1,13 +1,22 @@
 use std::path::PathBuf;
 
+#[path = "interface/app.rs"]
 mod app;
+#[path = "interface/document.rs"]
 mod document;
+#[path = "interface/file_io.rs"]
 mod file_io;
+#[path = "interface/html_export.rs"]
 mod html_export;
+#[path = "interface/markdown.rs"]
 mod markdown;
+#[path = "interface/pdf_export.rs"]
 mod pdf_export;
+#[path = "interface/printing.rs"]
 mod printing;
+#[path = "interface/render_assets.rs"]
 mod render_assets;
+#[path = "interface/workspace.rs"]
 mod workspace;
 
 fn main() {
@@ -28,7 +37,10 @@ fn main() {
             eprintln!("markhola smoke print prepare failed: {error}");
             std::process::exit(1);
         }
-        println!("markhola smoke print prepare succeeded: {}", input.display());
+        println!(
+            "markhola smoke print prepare succeeded: {}",
+            input.display()
+        );
         return;
     }
     if args.len() == 4 && args[1] == "--smoke-export-html" {

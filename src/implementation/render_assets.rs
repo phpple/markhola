@@ -1,11 +1,11 @@
 use std::fs::read_to_string;
 use std::path::PathBuf;
 
-pub const MERMAID_RUNTIME: &str = include_str!("../assets/mermaid/mermaid.min.js");
-pub const MATHJAX_RUNTIME: &str = include_str!("../assets/mathjax/tex-svg-full.js");
+pub const MERMAID_RUNTIME: &str = include_str!("../../assets/mermaid/mermaid.min.js");
+pub const MATHJAX_RUNTIME: &str = include_str!("../../assets/mathjax/tex-svg-full.js");
 const DEFAULT_APP_THEME_NAME: &str = "default";
 const DEFAULT_APP_THEME_LAYOUT_FILE: &str = "layout.css";
-const DEFAULT_APP_THEME_CSS: &str = include_str!("../themes/default/layout.css");
+const DEFAULT_APP_THEME_CSS: &str = include_str!("../../themes/default/layout.css");
 
 pub fn load_app_theme_css() -> String {
     for path in app_theme_candidates() {

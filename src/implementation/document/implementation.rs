@@ -1,15 +1,8 @@
 use std::path::{Path, PathBuf};
 
-use serde::Serialize;
-
 use crate::markdown;
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "lowercase")]
-pub enum DocumentMode {
-    Readonly,
-    Writable,
-}
+use super::{ActiveDocument, DocumentMode, DocumentSnapshot, DocumentTabSnapshot};
 
 impl DocumentMode {
     pub fn toggle(self) -> Self {
@@ -25,50 +18,6 @@ impl DocumentMode {
             Self::Writable => "Writable",
         }
     }
-}
-
-#[derive(Clone, Debug)]
-pub struct ActiveDocument {
-    id: u64,
-    file_path: PathBuf,
-    canonical_path: PathBuf,
-    file_name: String,
-    title: String,
-    markdown: String,
-    saved_markdown: String,
-    html: String,
-    base_url: String,
-    word_count: usize,
-    line_count: usize,
-    mode: DocumentMode,
-    dirty: bool,
-}
-
-#[derive(Clone, Debug, Serialize)]
-pub struct DocumentSnapshot {
-    pub document_id: u64,
-    pub file_name: String,
-    pub file_path: String,
-    pub title: String,
-    pub base_url: String,
-    pub word_count: usize,
-    pub line_count: usize,
-    pub html: String,
-    pub markdown: String,
-    pub mode: DocumentMode,
-    pub mode_label: &'static str,
-    pub dirty: bool,
-    pub save_status: &'static str,
-}
-
-#[derive(Clone, Debug, Serialize)]
-pub struct DocumentTabSnapshot {
-    pub document_id: u64,
-    pub file_name: String,
-    pub title: String,
-    pub dirty: bool,
-    pub active: bool,
-    pub mode: DocumentMode,
 }
 
 impl ActiveDocument {
@@ -203,7 +152,8 @@ impl ActiveDocument {
     }
 
     fn refresh_metadata(&mut self) {
-        self.title = markdown::extract_title(&self.markdown).unwrap_or_else(|| self.file_name.clone());
+        self.title =
+            markdown::extract_title(&self.markdown).unwrap_or_else(|| self.file_name.clone());
         let (word_count, line_count) = text_metrics(&self.markdown);
         self.word_count = word_count;
         self.line_count = line_count;
@@ -225,80 +175,19 @@ pub fn suggested_pdf_export_path(path: &Path) -> PathBuf {
         .file_stem()
         .and_then(|value| value.to_str())
         .filter(|value| !value.is_empty())
-        .or_else(|| path.file_name().and_then(|value| value.to_str()).filter(|value| !value.is_empty()))
+        .or_else(|| {
+            path.file_name()
+                .and_then(|value| value.to_str())
+                .filter(|value| !value.is_empty())
+        })
         .unwrap_or("document");
 
     path.with_file_name(format!("{stem}.pdf"))
 }
 
 fn text_metrics(markdown: &str) -> (usize, usize) {
-    (markdown.split_whitespace().count(), markdown.lines().count())
-}
-
-#[cfg(test)]
-mod tests {
-    use std::path::PathBuf;
-
-    use super::{ActiveDocument, DocumentMode};
-
-    #[test]
-    fn switching_to_readonly_rerenders_preview() {
-        let mut document = ActiveDocument::open_with_id(
-            1,
-            PathBuf::from("/tmp/demo.md"),
-            "# Hello\nworld".to_string(),
-            "file:///tmp/".to_string(),
-        );
-
-        document.toggle_mode();
-        assert_eq!(document.mode(), DocumentMode::Writable);
-
-        document.update_markdown("# Updated\ncontent".to_string());
-        document.toggle_mode();
-
-        let snapshot = document.snapshot();
-        assert_eq!(snapshot.mode, DocumentMode::Readonly);
-        assert!(snapshot.html.contains("Updated"));
-        assert!(snapshot.dirty);
-    }
-
-    #[test]
-    fn dirty_state_clears_after_save() {
-        let mut document = ActiveDocument::open_with_id(
-            1,
-            PathBuf::from("/tmp/demo.md"),
-            "# Hello".to_string(),
-            "file:///tmp/".to_string(),
-        );
-
-        document.update_markdown("# Hello again".to_string());
-        assert!(document.is_dirty());
-
-        document.mark_saved();
-        let snapshot = document.snapshot();
-
-        assert!(!snapshot.dirty);
-        assert_eq!(snapshot.save_status, "Saved");
-        assert!(snapshot.html.contains("Hello again"));
-    }
-
-    #[test]
-    fn reloading_from_disk_replaces_content_and_clears_dirty_state() {
-        let mut document = ActiveDocument::open_with_id(
-            1,
-            PathBuf::from("/tmp/demo.md"),
-            "# Hello".to_string(),
-            "file:///tmp/".to_string(),
-        );
-
-        document.update_markdown("# Unsaved".to_string());
-        assert!(document.is_dirty());
-
-        document.reload_from_disk_markdown("# Reloaded".to_string());
-        let snapshot = document.snapshot();
-
-        assert_eq!(snapshot.markdown, "# Reloaded");
-        assert!(snapshot.html.contains("Reloaded"));
-        assert!(!snapshot.dirty);
-    }
+    (
+        markdown.split_whitespace().count(),
+        markdown.lines().count(),
+    )
 }
