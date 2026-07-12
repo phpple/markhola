@@ -51,24 +51,30 @@ Run this extended command when packaging a release candidate:
    Expected: the print panel content reflects the current document instead of the application shell.
    Expected: writable-mode unsaved edits are included in the printed content.
 
-9. Documentation regression
+9. Find regression
+   Open `examples/basic.md`.
+   Expected: `Command + F` and `Edit > Find` open the same find panel.
+   Expected: readonly mode highlights matches, shows a stable match count, and supports `Enter`, `Shift + Enter`, `Next`, and `Previous`.
+   Expected: writable mode can find, replace, and replace all within the current tab without breaking dirty state updates.
+
+10. Documentation regression
    Expected: `Help > Documentation` opens the bundled release help markdown file inside the app.
 
-10. Multi-document regression
+11. Multi-document regression
    Open `examples/basic.md` and `examples/multi-document.md`.
    Expected: tabs stay pinned at the top while document content scrolls.
    Expected: switching tabs preserves each document state.
    Expected: closing one of several tabs keeps the app open.
    Expected: closing the last opened document returns to the empty state instead of exiting.
 
-11. Tab menu regression
+12. Tab menu regression
    Expected: the `Tab` menu can switch tabs, close the current tab, close other tabs, and close all tabs.
 
-12. Theme resource regression
+13. Theme resource regression
    Expected: `themes/default/layout.css` changes are reflected by the app.
    Expected: packaged app contains `Contents/Resources/themes/default/layout.css`.
    Expected: packaged app contains `Contents/Resources/help/Documentation.md`.
 
-13. Inspect regression
+14. Inspect regression
    Right click in the preview area.
    Expected: the context menu still exposes `Inspect`.

@@ -73,6 +73,7 @@ This is another markdown reader and exporter software.Written by AI, free are th
 ### v0.7.3
 1. In-page find support in readonly mode
 2. In-page find and replace support in writable mode
+3. Code split. Reduce the single rs file size, split to three parts: interface,implements,tests.
 
 ### v0.7.4
 1. Support `[toc]`

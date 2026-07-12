@@ -18,6 +18,8 @@ MarkHola is a lightweight desktop Markdown reader and editor for macOS.
 - Print the current document
 - Open multiple Markdown files in one window
 - Open the built-in documentation from the Help menu
+- Use `Command + F` to find text in readonly mode
+- Use `Command + F` to find and replace text in writable mode
 
 ## Menus
 
@@ -37,6 +39,7 @@ MarkHola is a lightweight desktop Markdown reader and editor for macOS.
 - Undo / Redo
 - Cut / Copy / Paste
 - Select All
+- Find
 
 ### Tab
 
@@ -53,5 +56,7 @@ MarkHola is a lightweight desktop Markdown reader and editor for macOS.
 ## Notes
 
 - Readonly mode renders Mermaid, math, tables, links, images, and code blocks.
+- Readonly mode supports in-page find across the current rendered document.
 - Writable mode keeps the Markdown source editable.
+- Writable mode supports in-page find, replace, and replace all on the current document.
 - Exported and printed output are based on the current rendered document.
