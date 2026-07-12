@@ -7,17 +7,13 @@ use std::time::{Duration, Instant};
 
 use block2::RcBlock;
 use lopdf::{Dictionary, Document as LoDocument, Object};
-use objc2::{MainThreadMarker, MainThreadOnly};
 use objc2::rc::Retained;
 use objc2::runtime::AnyObject;
+use objc2::{MainThreadMarker, MainThreadOnly};
 use objc2_app_kit::NSApp;
 use objc2_core_foundation::{CGPoint, CGRect, CGSize};
-use objc2_foundation::{
-    NSData, NSDefaultRunLoopMode, NSDate, NSError, NSRunLoop, NSString, NSURL,
-};
-use objc2_web_kit::{
-    WKContentWorld, WKPDFConfiguration, WKWebView, WKWebViewConfiguration,
-};
+use objc2_foundation::{NSData, NSDate, NSDefaultRunLoopMode, NSError, NSRunLoop, NSString, NSURL};
+use objc2_web_kit::{WKContentWorld, WKPDFConfiguration, WKWebView, WKWebViewConfiguration};
 use rfd::FileDialog;
 use serde::Deserialize;
 use serde_json::Value;
@@ -405,10 +401,20 @@ pub fn export_document(document: &ActiveDocument) -> Result<PdfExportOutcome, St
         "pdf_export.begin",
         None,
         "starting PDF export",
-        format!("path={} dirty={} mode={:?}", document.file_path().display(), document.is_dirty(), document.mode()),
+        format!(
+            "path={} dirty={} mode={:?}",
+            document.file_path().display(),
+            document.is_dirty(),
+            document.mode()
+        ),
     );
     let Some(export_path) = choose_export_path(document) else {
-        log_event("pdf_export.cancelled", None, "PDF export cancelled in save dialog", "");
+        log_event(
+            "pdf_export.cancelled",
+            None,
+            "PDF export cancelled in save dialog",
+            "",
+        );
         return Ok(PdfExportOutcome::Cancelled);
     };
     let rendered_document_html = markdown::render_html(document.markdown());
@@ -434,7 +440,12 @@ fn choose_export_path(document: &ActiveDocument) -> Option<PathBuf> {
     FileDialog::new()
         .add_filter("PDF", &["pdf"])
         .set_title("Export PDF")
-        .set_directory(document.file_path().parent().unwrap_or(document.file_path()))
+        .set_directory(
+            document
+                .file_path()
+                .parent()
+                .unwrap_or(document.file_path()),
+        )
         .set_file_name(suggested_name)
         .save_file()
 }
@@ -482,7 +493,9 @@ fn write_export(
     Ok(())
 }
 
-pub(crate) fn prepare_print_webview(document: &ActiveDocument) -> Result<PreparedPrintWebView, String> {
+pub(crate) fn prepare_print_webview(
+    document: &ActiveDocument,
+) -> Result<PreparedPrintWebView, String> {
     let rendered_document_html = markdown::render_html(document.markdown());
     let html = build_export_html(document, &rendered_document_html);
     let preparation_mode = export_preparation_mode(&rendered_document_html);
@@ -494,7 +507,10 @@ pub(crate) fn prepare_print_webview(document: &ActiveDocument) -> Result<Prepare
     })
 }
 
-fn apply_pdf_metadata(document: &ActiveDocument, pdf_data: Vec<u8>) -> Result<Vec<u8>, String> {
+pub(crate) fn apply_pdf_metadata(
+    document: &ActiveDocument,
+    pdf_data: Vec<u8>,
+) -> Result<Vec<u8>, String> {
     let mut pdf = LoDocument::load_mem(&pdf_data)
         .map_err(|error| format!("Failed to load generated PDF for metadata injection: {error}"))?;
 
@@ -575,14 +591,26 @@ fn prepare_webview(
 
     let html = NSString::from_str(html);
     let base_url = NSURL::URLWithString(&NSString::from_str(document.base_url()))
-        .or_else(|| NSURL::from_directory_path(document.file_path().parent().unwrap_or(document.file_path())))
+        .or_else(|| {
+            NSURL::from_directory_path(
+                document
+                    .file_path()
+                    .parent()
+                    .unwrap_or(document.file_path()),
+            )
+        })
         .ok_or("Failed to resolve the document base URL for PDF export.")?;
 
     let _app = NSApp(mtm);
     unsafe {
         webview.loadHTMLString_baseURL(&html, Some(&base_url));
     }
-    log_event("pdf_export.load.begin", None, "loading export HTML into WKWebView", "");
+    log_event(
+        "pdf_export.load.begin",
+        None,
+        "loading export HTML into WKWebView",
+        "",
+    );
     let load_timeout = timeout_for_mode(preparation_mode, started_at, "load")?;
 
     wait_for(
@@ -621,7 +649,12 @@ fn prepare_export_page_fast(
     mtm: MainThreadMarker,
     timeout: Duration,
 ) -> Result<ExportMeasurement, String> {
-    log_event("pdf_export.prepare_fast.begin", None, "preparing export page with fast path", "");
+    log_event(
+        "pdf_export.prepare_fast.begin",
+        None,
+        "preparing export page with fast path",
+        "",
+    );
     let result = run_prepare_script(
         webview,
         mtm,
@@ -639,8 +672,16 @@ fn prepare_export_page_fast(
     Ok(result)
 }
 
-fn prepare_export_page(webview: &WKWebView, mtm: MainThreadMarker) -> Result<ExportMeasurement, String> {
-    log_event("pdf_export.prepare.begin", None, "preparing export page", "");
+fn prepare_export_page(
+    webview: &WKWebView,
+    mtm: MainThreadMarker,
+) -> Result<ExportMeasurement, String> {
+    log_event(
+        "pdf_export.prepare.begin",
+        None,
+        "preparing export page",
+        "",
+    );
     let measurement = run_prepare_script(
         webview,
         mtm,
@@ -675,7 +716,9 @@ fn run_prepare_script(
         } else if let Some(result) = unsafe { Retained::retain(result) } {
             match result.downcast::<NSString>() {
                 Ok(string) => Ok(string.to_string()),
-                Err(_) => Err("Export preparation returned an unexpected JavaScript result.".to_string()),
+                Err(_) => {
+                    Err("Export preparation returned an unexpected JavaScript result.".to_string())
+                }
             }
         } else {
             Err("Export preparation did not return a JavaScript result.".to_string())
@@ -695,12 +738,7 @@ fn run_prepare_script(
         );
     }
 
-    wait_for(
-        || outcome.borrow().is_some(),
-        timeout_message,
-        timeout,
-    )
-    .map_err(|message| {
+    wait_for(|| outcome.borrow().is_some(), timeout_message, timeout).map_err(|message| {
         let progress = export_progress_snapshot(webview, mtm)
             .unwrap_or_else(|error| format!("progress-unavailable:{error}"));
         log_event(
@@ -730,7 +768,12 @@ fn create_pdf(
     configuration: &WKPDFConfiguration,
     timeout: Duration,
 ) -> Result<Vec<u8>, String> {
-    log_event("pdf_export.create_pdf.begin", None, "creating PDF from WKWebView", "");
+    log_event(
+        "pdf_export.create_pdf.begin",
+        None,
+        "creating PDF from WKWebView",
+        "",
+    );
     let outcome = Rc::new(RefCell::new(None));
     let outcome_for_block = Rc::clone(&outcome);
     let completion = RcBlock::new(move |data: *mut NSData, error: *mut NSError| {
@@ -893,142 +936,6 @@ pub(crate) fn build_export_html(document: &ActiveDocument, rendered_html: &str) 
         .replace("__DOCUMENT_HTML__", rendered_html)
 }
 
-fn export_footer_text() -> String {
+pub(crate) fn export_footer_text() -> String {
     EXPORT_FOOTER_TEXT.replace("__APP_VERSION__", APP_VERSION)
-}
-
-#[cfg(test)]
-mod tests {
-    use std::path::PathBuf;
-
-    use crate::document::{suggested_pdf_export_path, ActiveDocument};
-
-    use crate::markdown;
-    use lopdf::{Dictionary, Document as LoDocument, Object, Stream};
-
-    use super::{
-        apply_pdf_metadata, build_export_html, export_footer_text, export_preparation_mode,
-        ExportPreparationMode, APP_NAME, APP_VERSION,
-    };
-
-    fn document(path: &str, markdown: &str) -> ActiveDocument {
-        ActiveDocument::open_with_id(
-            1,
-            PathBuf::from(path),
-            markdown.to_string(),
-            "file:///tmp/".to_string(),
-        )
-    }
-
-    #[test]
-    fn suggested_pdf_path_replaces_markdown_extension() {
-        assert_eq!(
-            suggested_pdf_export_path(PathBuf::from("/tmp/note.md").as_path()),
-            PathBuf::from("/tmp/note.pdf")
-        );
-        assert_eq!(
-            suggested_pdf_export_path(PathBuf::from("/tmp/README.markdown").as_path()),
-            PathBuf::from("/tmp/README.pdf")
-        );
-        assert_eq!(
-            suggested_pdf_export_path(PathBuf::from("/tmp/notes").as_path()),
-            PathBuf::from("/tmp/notes.pdf")
-        );
-    }
-
-    #[test]
-    fn export_html_contains_document_content_without_app_shell() {
-        let document = document(
-            "/tmp/example.md",
-            "# Example\n\n```mermaid\nflowchart TD\n  A-->B\n```\n\n$$x^2$$",
-        );
-        let html = build_export_html(&document, &markdown::render_html(document.markdown()));
-
-        assert!(html.contains("markdown-body export-page"));
-        assert!(html.contains("window.markholaPreparePdf"));
-        assert!(html.contains("mermaid-block"));
-        assert!(html.contains("math math-display"));
-        assert!(html.contains(&export_footer_text()));
-        assert!(!html.contains("<div class=\"tabs-bar\""));
-        assert!(!html.contains("<div class=\"editor-pane\""));
-        assert!(!html.contains("<div class=\"about-overlay\""));
-    }
-
-    #[test]
-    fn uses_fast_prepare_for_plain_markdown() {
-        let document = document("/tmp/plain.md", "# Plain\n\nhello world");
-        assert_eq!(
-            export_preparation_mode(&markdown::render_html(document.markdown())),
-            ExportPreparationMode::Fast
-        );
-    }
-
-    #[test]
-    fn uses_full_prepare_for_async_rendering_content() {
-        let document = document(
-            "/tmp/async.md",
-            "# Async\n\n```mermaid\nflowchart TD\n  A-->B\n```\n\n![img](./demo.png)\n\n$E=mc^2$",
-        );
-        assert_eq!(
-            export_preparation_mode(&markdown::render_html(document.markdown())),
-            ExportPreparationMode::Full
-        );
-    }
-
-    #[test]
-    fn injects_pdf_metadata_with_markhola_version() {
-        let document = document("/tmp/meta.md", "# Meta");
-        let mut base = LoDocument::with_version("1.5");
-        let pages_id = base.new_object_id();
-        let page_id = base.new_object_id();
-        let content_id = base.add_object(Stream::new(Dictionary::new(), Vec::new()));
-        let resources_id = base.add_object(Dictionary::new());
-
-        let mut page = Dictionary::new();
-        page.set("Type", "Page");
-        page.set("Parent", pages_id);
-        page.set("Contents", content_id);
-        page.set("Resources", resources_id);
-        page.set(
-            "MediaBox",
-            vec![Object::Integer(0), Object::Integer(0), Object::Integer(100), Object::Integer(100)],
-        );
-        base.objects.insert(page_id, Object::Dictionary(page));
-
-        let mut pages = Dictionary::new();
-        pages.set("Type", "Pages");
-        pages.set("Kids", vec![page_id.into()]);
-        pages.set("Count", 1);
-        base.objects.insert(pages_id, Object::Dictionary(pages));
-
-        let mut catalog = Dictionary::new();
-        catalog.set("Type", "Catalog");
-        catalog.set("Pages", pages_id);
-        let catalog_id = base.add_object(catalog);
-        base.trailer.set("Root", catalog_id);
-
-        let mut base_pdf = Vec::new();
-        base.save_to(&mut base_pdf).expect("base pdf should serialize");
-
-        let output = apply_pdf_metadata(&document, base_pdf).expect("metadata injection should succeed");
-        let parsed = LoDocument::load_mem(&output).expect("output pdf should parse");
-        let info_ref = parsed
-            .trailer
-            .get(b"Info")
-            .expect("info should exist")
-            .as_reference()
-            .expect("info should be a reference");
-        let info = parsed
-            .get_dictionary(info_ref)
-            .expect("info dictionary should be readable");
-
-        assert_eq!(
-            info.get(b"Creator").and_then(Object::as_str).ok(),
-            Some(APP_NAME.as_bytes())
-        );
-        assert_eq!(
-            info.get(b"Producer").and_then(Object::as_str).ok(),
-            Some(format!("{APP_NAME} v{APP_VERSION}").as_bytes())
-        );
-    }
 }

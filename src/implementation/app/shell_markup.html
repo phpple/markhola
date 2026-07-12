@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <base id="document-base" href="" />
+    <title>MarkHola</title>
+    <style>__APP_THEME__</style>
+  </head>
+  <body>
+        <div class="app">
+          <div class="tabs-bar hidden" id="tabsBar"></div>
+          <section class="preview-shell">
+            <div class="workspace">
+              <div class="empty-state pane" id="emptyState">
+                <div class="empty-card">
+                  <h2>No document opened</h2>
+                  <p>Open, drag, or drop a Markdown file to preview or edit the current Markdown source.</p>
+                </div>
+              </div>
+              <div class="preview pane hidden" id="previewPane">
+                <div class="preview-header" id="previewHeader">
+                  <div class="preview-title">
+                    <strong id="documentTitle">Preview</strong>
+                    <span id="documentSubtitle">Use File > Open, Command+O, or drag a Markdown file into the window.</span>
+                  </div>
+                  <span id="status" class="status" data-level="info">Ready.</span>
+                  <div class="find-panel hidden" id="findPanel">
+                    <div class="find-panel__group">
+                      <input id="findInput" class="find-panel__input" type="text" placeholder="Find in document" aria-label="Find in document" />
+                      <span id="findCount" class="find-panel__count">0 results</span>
+                    </div>
+                    <div class="find-panel__group find-panel__replace hidden" id="replaceGroup">
+                      <input id="replaceInput" class="find-panel__input" type="text" placeholder="Replace with" aria-label="Replace with" />
+                    </div>
+                    <div class="find-panel__actions">
+                      <button id="findPrevious" class="find-panel__button" type="button">Previous</button>
+                      <button id="findNext" class="find-panel__button" type="button">Next</button>
+                      <button id="replaceOne" class="find-panel__button hidden" type="button">Replace</button>
+                      <button id="replaceAll" class="find-panel__button hidden" type="button">Replace All</button>
+                      <button id="findClose" class="find-panel__button find-panel__button--ghost" type="button">Close</button>
+                    </div>
+                  </div>
+                </div>
+                <article class="markdown-body" id="content"></article>
+              </div>
+              <div class="editor-pane pane hidden" id="editorPane">
+                <div class="editor-shell" id="editorShell">
+              <div id="editorLineNumbers" class="editor-line-numbers" aria-hidden="true">1</div>
+              <textarea id="editor" class="editor" spellcheck="false" aria-label="Markdown editor"></textarea>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <footer class="bottom-bar">
+        <div class="bottom-item" id="filePath">Path: No file opened</div>
+        <div class="bottom-item" id="wordCount"><strong>Words</strong> 0</div>
+        <div class="bottom-item" id="lineCount"><strong>Lines</strong> 0</div>
+        <div class="bottom-item" id="modeState"><strong>Mode</strong> Readonly</div>
+        <div class="bottom-item" id="saveState"><strong>Status</strong> Ready.</div>
+      </footer>
+    </div>
+
+    <div class="about-overlay hidden" id="aboutOverlay">
+      <div class="about-dialog" role="dialog" aria-modal="true" aria-labelledby="aboutTitle">
+        <div class="about-header">
+          <h2 id="aboutTitle">About MarkHola</h2>
+          <button class="about-close" id="aboutClose" type="button" aria-label="Close About">&times;</button>
+        </div>
+        <div class="about-brand">
+          <svg class="about-logo" viewBox="0 0 1600 640" aria-hidden="true">
+            <rect width="1600" height="640" rx="72" fill="#FCFBF8"/>
+            <g transform="translate(72 78)">
+              <rect x="0" y="0" width="484" height="484" rx="120" fill="url(#aboutBadge)"/>
+              <rect x="46" y="46" width="392" height="392" rx="98" fill="#FFF9F0" fill-opacity="0.96"/>
+              <path d="M120 338V140H160L242 272L324 140H364V338H321V218L255 320H229L163 218V338H120Z" fill="#FF8A00"/>
+              <path d="M198 262H286V306H198V262Z" fill="#35D67C"/>
+              <circle cx="242" cy="284" r="74" stroke="#35D67C" stroke-width="18" stroke-dasharray="14 18"/>
+            </g>
+            <g transform="translate(632 162)">
+              <path d="M0 244V20H40L134 179L228 20H268V244H222V110L146 210H122L46 110V244H0Z" fill="#FF8A00"/>
+              <path d="M309 244V83C309 45 338 22 380 22H487V64H388C367 64 356 72 356 87V106H473C514 106 543 131 543 169V181C543 219 514 244 473 244H309ZM356 202H465C485 202 497 193 497 178V172C497 157 485 148 465 148H356V202Z" fill="#FF8A00"/>
+              <path d="M582 244V83C582 45 611 22 653 22H770V64H661C640 64 629 72 629 87V244H582Z" fill="#FF8A00"/>
+              <path d="M807 244V0H854V244H807Z" fill="#FF8A00"/>
+              <path d="M899 132L1010 22H1071L957 132L1082 244H1017L899 145V244H852V22H899V132Z" fill="#FF8A00"/>
+              <path d="M585 496V276H632V365H754V276H801V496H754V407H632V496H585Z" fill="#35D67C"/>
+              <path d="M835 408V365C835 314 872 276 925 276H1034C1087 276 1124 314 1124 365V408C1124 458 1087 496 1034 496H925C872 496 835 458 835 408ZM882 401C882 429 899 454 928 454H1031C1060 454 1077 429 1077 401V372C1077 343 1060 318 1031 318H928C899 318 882 343 882 372V401Z" fill="#35D67C"/>
+              <path d="M1156 496V315C1156 292 1173 276 1197 276H1239V318H1206C1200 318 1196 322 1196 329V496H1156Z" fill="#35D67C"/>
+              <path d="M1270 408V365C1270 314 1308 276 1361 276H1470C1523 276 1560 314 1560 365V408C1560 458 1523 496 1470 496H1361C1308 496 1270 458 1270 408ZM1317 401C1317 429 1334 454 1364 454H1467C1496 454 1513 429 1513 401V372C1513 343 1496 318 1467 318H1364C1334 318 1317 343 1317 372V401Z" fill="#35D67C"/>
+            </g>
+            <defs>
+              <linearGradient id="aboutBadge" x1="0" y1="0" x2="484" y2="484" gradientUnits="userSpaceOnUse">
+                <stop stop-color="#FFF2D9"/>
+                <stop offset="1" stop-color="#EFFFF5"/>
+              </linearGradient>
+            </defs>
+          </svg>
+          <div class="about-product">
+            <h3>MarkHola</h3>
+            <p>Markdown reader and editor</p>
+          </div>
+        </div>
+        <div class="about-meta">
+          <div class="about-meta-row">
+            <strong>Version</strong>
+            <span class="about-value" id="aboutVersion">0.7.0</span>
+            <span></span>
+          </div>
+          <div class="about-meta-row">
+            <strong>Author</strong>
+            <span class="about-value" id="aboutAuthor">Ronnie Deng</span>
+            <span></span>
+          </div>
+          <div class="about-meta-row">
+            <strong>Build</strong>
+            <span class="about-value" id="aboutBuild">apple / arm64</span>
+            <span></span>
+          </div>
+          <div class="about-meta-row">
+            <strong>GitHub</strong>
+            <a class="about-value" id="aboutGithub" href="https://github.com/phpple/markhola">https://github.com/phpple/markhola</a>
+            <button class="about-copy" id="aboutCopy" type="button">Copy</button>
+          </div>
+        </div>
+        <div class="about-footer">Built for local Markdown reading and writing on Apple Silicon.</div>
+      </div>
+    </div>
+

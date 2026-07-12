@@ -22,13 +22,21 @@ pub fn print_document(document: &ActiveDocument) -> Result<PrintOutcome, String>
     let print_info = NSPrintInfo::sharedPrintInfo();
     let operation = unsafe { prepared.webview.printOperationWithPrintInfo(&print_info) };
 
-    log_event("printing.operation.begin", None, "starting NSPrintOperation", "");
+    log_event(
+        "printing.operation.begin",
+        None,
+        "starting NSPrintOperation",
+        "",
+    );
     let did_run = operation.runOperation();
     log_event(
         "printing.operation.end",
         None,
         "finished NSPrintOperation",
-        format!("did_run={did_run} preparation_mode={:?}", prepared.preparation_mode),
+        format!(
+            "did_run={did_run} preparation_mode={:?}",
+            prepared.preparation_mode
+        ),
     );
 
     if did_run {
@@ -56,7 +64,11 @@ pub fn smoke_prepare_markdown_file_for_print(input_path: &std::path::Path) -> Re
         "printing.smoke",
         None,
         "prepared print webview for smoke validation",
-        format!("path={} preparation_mode={:?}", input_path.display(), prepared.preparation_mode),
+        format!(
+            "path={} preparation_mode={:?}",
+            input_path.display(),
+            prepared.preparation_mode
+        ),
     );
     Ok(())
 }
