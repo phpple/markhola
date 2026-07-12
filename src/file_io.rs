@@ -58,7 +58,7 @@ fn decode_utf16(bytes: &[u8], decode_unit: fn([u8; 2]) -> u16) -> Result<String,
 }
 
 pub fn save_markdown(path: &Path, markdown: &str) -> Result<(), String> {
-    ensure_supported_markdown_path(path)?;
+    ensure_supported_markdown_extension(path)?;
 
     let parent = path
         .parent()
@@ -88,11 +88,7 @@ pub fn save_markdown(path: &Path, markdown: &str) -> Result<(), String> {
     Ok(())
 }
 
-pub fn ensure_supported_markdown_path(path: &Path) -> Result<(), String> {
-    if !path.exists() {
-        return Err(format!("File not found: {}", path.display()));
-    }
-
+pub fn ensure_supported_markdown_extension(path: &Path) -> Result<(), String> {
     let extension = path
         .extension()
         .and_then(|value| value.to_str())
@@ -102,6 +98,14 @@ pub fn ensure_supported_markdown_path(path: &Path) -> Result<(), String> {
         Some("md") | Some("markdown") => Ok(()),
         _ => Err("Only .md and .markdown files are supported in v0.6.0.".to_string()),
     }
+}
+
+pub fn ensure_supported_markdown_path(path: &Path) -> Result<(), String> {
+    if !path.exists() {
+        return Err(format!("File not found: {}", path.display()));
+    }
+
+    ensure_supported_markdown_extension(path)
 }
 
 pub fn directory_base_url(path: &Path) -> Result<String, String> {
@@ -119,7 +123,7 @@ mod tests {
     use std::path::PathBuf;
     use std::time::{SystemTime, UNIX_EPOCH};
 
-    use super::{ensure_supported_markdown_path, load_markdown, save_markdown};
+    use super::{ensure_supported_markdown_extension, ensure_supported_markdown_path, load_markdown, save_markdown};
 
     fn temp_file(name: &str, extension: &str) -> PathBuf {
         let stamp = SystemTime::now()
@@ -195,5 +199,12 @@ mod tests {
 
         assert_eq!(content, "\u{684c}\u{9762}\u{6280}\u{672f}");
         let _ = fs::remove_file(&path);
+    }
+
+    #[test]
+    fn save_as_allows_new_markdown_path() {
+        let path = temp_file("save-as", "md");
+
+        assert!(ensure_supported_markdown_extension(&path).is_ok());
     }
 }

@@ -50,6 +50,7 @@ enum UserEvent {
     RecoverShell(String),
     OpenExternal(String),
     SaveDocument,
+    SaveDocumentAs,
     ExportPdf,
     ToggleMode,
     EditorChanged(String),
@@ -313,6 +314,7 @@ fn dispatch_user_event(proxy: &EventLoopProxy<UserEvent>, stage_source: &'static
         UserEvent::RecoverShell(url) => (None, "RecoverShell", format!("source={} url={url}", stage_source)),
         UserEvent::OpenExternal(href) => (None, "OpenExternal", format!("source={} href={href}", stage_source)),
         UserEvent::SaveDocument => (None, "SaveDocument", format!("source={stage_source}")),
+        UserEvent::SaveDocumentAs => (None, "SaveDocumentAs", format!("source={stage_source}")),
         UserEvent::ExportPdf => (None, "ExportPdf", format!("source={stage_source}")),
         UserEvent::ToggleMode => (None, "ToggleMode", format!("source={stage_source}")),
         UserEvent::EditorChanged(markdown) => (
@@ -646,6 +648,10 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
                 log_event("user_event.received", None, "handling UserEvent::SaveDocument", "");
                 save_active_document(&window, &webview, &mut workspace);
             }
+            Event::UserEvent(UserEvent::SaveDocumentAs) => {
+                log_event("user_event.received", None, "handling UserEvent::SaveDocumentAs", "");
+                save_active_document_as(&window, &webview, &mut workspace);
+            }
             Event::UserEvent(UserEvent::ExportPdf) => {
                 log_event("user_event.received", None, "handling UserEvent::ExportPdf", "");
                 match workspace.active_document() {
@@ -765,6 +771,9 @@ fn handle_ipc_message(proxy: &EventLoopProxy<UserEvent>, payload: String) {
         }
         Some("request-save") => {
             dispatch_user_event(proxy, "ipc", UserEvent::SaveDocument);
+        }
+        Some("request-save-as") => {
+            dispatch_user_event(proxy, "ipc", UserEvent::SaveDocumentAs);
         }
         Some("request-export-pdf") => {
             dispatch_user_event(proxy, "ipc", UserEvent::ExportPdf);
@@ -914,6 +923,66 @@ fn save_active_document(window: &Window, webview: &WebView, workspace: &mut Docu
     true
 }
 
+fn save_active_document_as(window: &Window, webview: &WebView, workspace: &mut DocumentWorkspace) -> bool {
+    let Some(document) = workspace.active_document() else {
+        render_status(webview, "No document to save.", "error");
+        return false;
+    };
+
+    let document_id = document.id();
+    let document_directory = document
+        .file_path()
+        .parent()
+        .unwrap_or(document.file_path())
+        .to_path_buf();
+    let document_name = document.file_name().to_string();
+    let document_markdown = document.markdown().to_string();
+
+    let Some(path) = FileDialog::new()
+        .add_filter("Markdown", &["md", "markdown"])
+        .set_title("Save Markdown File As")
+        .set_directory(&document_directory)
+        .set_file_name(&document_name)
+        .save_file()
+    else {
+        render_status(webview, "Save As cancelled.", "info");
+        return false;
+    };
+
+    if workspace
+        .find_by_path_excluding(&path, document_id)
+        .is_some()
+    {
+        render_status(
+            webview,
+            "Save As target is already open in another tab.",
+            "error",
+        );
+        return false;
+    }
+
+    if let Err(error) = file_io::save_markdown(&path, &document_markdown) {
+        render_status(webview, &error, "error");
+        return false;
+    }
+
+    let base_url = match file_io::directory_base_url(&path) {
+        Ok(base_url) => base_url,
+        Err(error) => {
+            render_status(webview, &error, "error");
+            return false;
+        }
+    };
+
+    let Some(document) = workspace.active_document_mut() else {
+        render_status(webview, "No document to save.", "error");
+        return false;
+    };
+    document.replace_file_path(path.clone(), base_url);
+    sync_workspace_state(window, webview, workspace, "Saved to new path.");
+    true
+}
+
 fn resolve_document_pending_changes(window: &Window, webview: &WebView, document: &mut ActiveDocument) -> bool {
     if !document.is_dirty() {
         return true;
@@ -1045,7 +1114,7 @@ fn update_window_title(window: &Window, title: Option<&str>) {
 
 fn sync_native_menu_state(workspace: &DocumentWorkspace) {
     #[cfg(target_os = "macos")]
-    macos_menu::set_export_pdf_enabled(workspace.active_document().is_some());
+    macos_menu::set_document_output_enabled(workspace.active_document().is_some());
 }
 
 fn workspace_presentation(workspace: &DocumentWorkspace, status: &str) -> WorkspacePresentation {
@@ -1928,6 +1997,7 @@ mod macos_menu {
 
     thread_local! {
         static EXPORT_PDF_ITEM: RefCell<Option<Retained<NSMenuItem>>> = const { RefCell::new(None) };
+        static SAVE_AS_ITEM: RefCell<Option<Retained<NSMenuItem>>> = const { RefCell::new(None) };
     }
 
     #[derive(Debug)]
@@ -1960,6 +2030,12 @@ mod macos_menu {
             fn save_menu_document(&self, _sender: Option<&AnyObject>) {
                 super::log_event("macos.menu.action", None, "macOS menu action saveMenuDocument:", "");
                 super::dispatch_user_event(&self.ivars().proxy, "macos-menu", UserEvent::SaveDocument);
+            }
+
+            #[unsafe(method(saveMenuDocumentAs:))]
+            fn save_menu_document_as(&self, _sender: Option<&AnyObject>) {
+                super::log_event("macos.menu.action", None, "macOS menu action saveMenuDocumentAs:", "");
+                super::dispatch_user_event(&self.ivars().proxy, "macos-menu", UserEvent::SaveDocumentAs);
             }
 
             #[unsafe(method(exportPdfDocument:))]
@@ -2103,6 +2179,23 @@ mod macos_menu {
         unsafe { save_item.setTarget(Some((&**target).as_ref())) };
         save_item.setKeyEquivalentModifierMask(NSEventModifierFlags::Command);
         file_menu.addItem(&save_item);
+
+        let save_as_item = unsafe {
+            NSMenuItem::initWithTitle_action_keyEquivalent(
+                NSMenuItem::alloc(mtm),
+                ns_string!("Save As"),
+                Some(sel!(saveMenuDocumentAs:)),
+                ns_string!("S"),
+            )
+        };
+        unsafe { save_as_item.setTarget(Some((&**target).as_ref())) };
+        save_as_item.setKeyEquivalentModifierMask(
+            NSEventModifierFlags::Command | NSEventModifierFlags::Shift,
+        );
+        file_menu.addItem(&save_as_item);
+        SAVE_AS_ITEM.with(|slot| {
+            *slot.borrow_mut() = Some(save_as_item.clone());
+        });
 
         let export_pdf_item = unsafe {
             NSMenuItem::initWithTitle_action_keyEquivalent(
@@ -2329,7 +2422,12 @@ mod macos_menu {
         let _ = NSApp(mtm);
         Ok(())
     }
-    pub fn set_export_pdf_enabled(enabled: bool) {
+    pub fn set_document_output_enabled(enabled: bool) {
+        SAVE_AS_ITEM.with(|slot| {
+            if let Some(item) = slot.borrow().as_ref() {
+                item.setEnabled(enabled);
+            }
+        });
         EXPORT_PDF_ITEM.with(|slot| {
             if let Some(item) = slot.borrow().as_ref() {
                 item.setEnabled(enabled);
