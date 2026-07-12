@@ -5,6 +5,7 @@ mod document;
 mod file_io;
 mod markdown;
 mod pdf_export;
+mod printing;
 mod render_assets;
 mod workspace;
 
@@ -18,6 +19,15 @@ fn main() {
             std::process::exit(1);
         }
         println!("markhola smoke export succeeded: {}", output.display());
+        return;
+    }
+    if args.len() == 3 && args[1] == "--smoke-print-prepare" {
+        let input = PathBuf::from(&args[2]);
+        if let Err(error) = printing::smoke_prepare_markdown_file_for_print(&input) {
+            eprintln!("markhola smoke print prepare failed: {error}");
+            std::process::exit(1);
+        }
+        println!("markhola smoke print prepare succeeded: {}", input.display());
         return;
     }
 

@@ -18,7 +18,7 @@ use objc2_foundation::{
 use objc2_web_kit::{
     WKContentWorld, WKPDFConfiguration, WKWebView, WKWebViewConfiguration,
 };
-use rfd::{FileDialog, MessageButtons, MessageDialog, MessageDialogResult, MessageLevel};
+use rfd::FileDialog;
 use serde::Deserialize;
 use serde_json::Value;
 
@@ -28,12 +28,12 @@ use crate::file_io;
 use crate::markdown;
 use crate::render_assets;
 
-const APP_NAME: &str = "MarkHola";
-const APP_VERSION: &str = env!("CARGO_PKG_VERSION");
-const EXPORT_WEBVIEW_WIDTH: f64 = 816.0;
-const EXPORT_WEBVIEW_HEIGHT: f64 = 1120.0;
-const EXPORT_TIMEOUT: Duration = Duration::from_secs(60);
-const FAST_EXPORT_BUDGET: Duration = Duration::from_secs(3);
+pub(crate) const APP_NAME: &str = "MarkHola";
+pub(crate) const APP_VERSION: &str = env!("CARGO_PKG_VERSION");
+pub(crate) const EXPORT_WEBVIEW_WIDTH: f64 = 816.0;
+pub(crate) const EXPORT_WEBVIEW_HEIGHT: f64 = 1120.0;
+pub(crate) const EXPORT_TIMEOUT: Duration = Duration::from_secs(60);
+pub(crate) const FAST_EXPORT_BUDGET: Duration = Duration::from_secs(3);
 const EXPORT_FOOTER_TEXT: &str = "Exported by MarkHola v__APP_VERSION__";
 const EXPORT_PRINT_CSS: &str = r#"
 html, body {
@@ -384,7 +384,7 @@ pub enum PdfExportOutcome {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum ExportPreparationMode {
+pub(crate) enum ExportPreparationMode {
     Fast,
     Full,
 }
@@ -393,6 +393,11 @@ enum ExportPreparationMode {
 struct ExportMeasurement {
     width: f64,
     height: f64,
+}
+
+pub(crate) struct PreparedPrintWebView {
+    pub webview: Retained<WKWebView>,
+    pub preparation_mode: ExportPreparationMode,
 }
 
 pub fn export_document(document: &ActiveDocument) -> Result<PdfExportOutcome, String> {
@@ -406,16 +411,6 @@ pub fn export_document(document: &ActiveDocument) -> Result<PdfExportOutcome, St
         log_event("pdf_export.cancelled", None, "PDF export cancelled in save dialog", "");
         return Ok(PdfExportOutcome::Cancelled);
     };
-    if export_path.exists() && !confirm_overwrite(&export_path) {
-        log_event(
-            "pdf_export.cancelled",
-            None,
-            "PDF export cancelled by overwrite confirmation",
-            format!("output={}", export_path.display()),
-        );
-        return Ok(PdfExportOutcome::Cancelled);
-    }
-
     let rendered_document_html = markdown::render_html(document.markdown());
     let html = build_export_html(document, &rendered_document_html);
     let preparation_mode = export_preparation_mode(&rendered_document_html);
@@ -442,35 +437,6 @@ fn choose_export_path(document: &ActiveDocument) -> Option<PathBuf> {
         .set_directory(document.file_path().parent().unwrap_or(document.file_path()))
         .set_file_name(suggested_name)
         .save_file()
-}
-
-fn confirm_overwrite(path: &PathBuf) -> bool {
-    let file_name = path
-        .file_name()
-        .and_then(|value| value.to_str())
-        .unwrap_or("this file");
-    log_event(
-        "pdf_export.overwrite_prompt",
-        None,
-        "asking whether to overwrite existing PDF",
-        format!("output={}", path.display()),
-    );
-
-    let result = MessageDialog::new()
-        .set_level(MessageLevel::Warning)
-        .set_title("Replace existing PDF")
-        .set_description(format!("{file_name} already exists. Replace it with the new export?"))
-        .set_buttons(MessageButtons::YesNo)
-        .show();
-
-    let should_overwrite = matches!(result, MessageDialogResult::Yes);
-    log_event(
-        "pdf_export.overwrite_prompt.end",
-        None,
-        "overwrite decision captured",
-        format!("output={} overwrite={should_overwrite}", path.display()),
-    );
-    should_overwrite
 }
 
 pub fn export_markdown_file_to_path(input_path: &Path, output_path: &Path) -> Result<(), String> {
@@ -516,6 +482,18 @@ fn write_export(
     Ok(())
 }
 
+pub(crate) fn prepare_print_webview(document: &ActiveDocument) -> Result<PreparedPrintWebView, String> {
+    let rendered_document_html = markdown::render_html(document.markdown());
+    let html = build_export_html(document, &rendered_document_html);
+    let preparation_mode = export_preparation_mode(&rendered_document_html);
+    let webview = prepare_webview(document, &html, preparation_mode)?;
+
+    Ok(PreparedPrintWebView {
+        webview,
+        preparation_mode,
+    })
+}
+
 fn apply_pdf_metadata(document: &ActiveDocument, pdf_data: Vec<u8>) -> Result<Vec<u8>, String> {
     let mut pdf = LoDocument::load_mem(&pdf_data)
         .map_err(|error| format!("Failed to load generated PDF for metadata injection: {error}"))?;
@@ -546,6 +524,40 @@ fn render_pdf_data(
     html: &str,
     preparation_mode: ExportPreparationMode,
 ) -> Result<Vec<u8>, String> {
+    let started_at = Instant::now();
+    let webview = prepare_webview(document, html, preparation_mode)?;
+    let measurement = measure_prepared_webview(&webview, preparation_mode, started_at)?;
+    log_event(
+        "pdf_export.prepare.measurement",
+        None,
+        "prepared export page measurement",
+        format!("width={} height={}", measurement.width, measurement.height),
+    );
+    let mtm = MainThreadMarker::new().ok_or("PDF export must run on the main thread.")?;
+    let pdf_configuration = unsafe { WKPDFConfiguration::new(mtm) };
+    unsafe {
+        pdf_configuration.setAllowTransparentBackground(false);
+    }
+
+    let pdf_data = create_pdf(
+        &webview,
+        &pdf_configuration,
+        timeout_for_mode(preparation_mode, started_at, "create-pdf")?,
+    )?;
+    log_event(
+        "pdf_export.render.end",
+        None,
+        "completed render_pdf_data",
+        format!("elapsed_ms={}", started_at.elapsed().as_millis()),
+    );
+    Ok(pdf_data)
+}
+
+fn prepare_webview(
+    document: &ActiveDocument,
+    html: &str,
+    preparation_mode: ExportPreparationMode,
+) -> Result<Retained<WKWebView>, String> {
     let started_at = Instant::now();
     let mtm = MainThreadMarker::new().ok_or("PDF export must run on the main thread.")?;
 
@@ -585,37 +597,23 @@ fn render_pdf_data(
         format!("elapsed_ms={}", started_at.elapsed().as_millis()),
     );
 
-    let measurement = match preparation_mode {
+    Ok(webview)
+}
+
+fn measure_prepared_webview(
+    webview: &WKWebView,
+    preparation_mode: ExportPreparationMode,
+    started_at: Instant,
+) -> Result<ExportMeasurement, String> {
+    let mtm = MainThreadMarker::new().ok_or("PDF export must run on the main thread.")?;
+    match preparation_mode {
         ExportPreparationMode::Fast => prepare_export_page_fast(
-            &webview,
+            webview,
             mtm,
             timeout_for_mode(preparation_mode, started_at, "prepare-fast")?,
-        )?,
-        ExportPreparationMode::Full => prepare_export_page(&webview, mtm)?,
-    };
-    log_event(
-        "pdf_export.prepare.measurement",
-        None,
-        "prepared export page measurement",
-        format!("width={} height={}", measurement.width, measurement.height),
-    );
-    let pdf_configuration = unsafe { WKPDFConfiguration::new(mtm) };
-    unsafe {
-        pdf_configuration.setAllowTransparentBackground(false);
+        ),
+        ExportPreparationMode::Full => prepare_export_page(webview, mtm),
     }
-
-    let pdf_data = create_pdf(
-        &webview,
-        &pdf_configuration,
-        timeout_for_mode(preparation_mode, started_at, "create-pdf")?,
-    )?;
-    log_event(
-        "pdf_export.render.end",
-        None,
-        "completed render_pdf_data",
-        format!("elapsed_ms={}", started_at.elapsed().as_millis()),
-    );
-    Ok(pdf_data)
 }
 
 fn prepare_export_page_fast(
@@ -836,7 +834,7 @@ fn wait_for(
     Ok(())
 }
 
-fn export_preparation_mode(html: &str) -> ExportPreparationMode {
+pub(crate) fn export_preparation_mode(html: &str) -> ExportPreparationMode {
     let requires_full_prepare = html.contains("mermaid-block")
         || html.contains("math-block")
         || html.contains("math math-inline")
@@ -850,7 +848,7 @@ fn export_preparation_mode(html: &str) -> ExportPreparationMode {
     }
 }
 
-fn timeout_for_mode(
+pub(crate) fn timeout_for_mode(
     mode: ExportPreparationMode,
     started_at: Instant,
     stage: &str,

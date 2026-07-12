@@ -21,6 +21,7 @@ use wry::{PageLoadEvent, WebView, WebViewBuilder};
 use crate::document::{ActiveDocument, DocumentSnapshot, DocumentTabSnapshot, DocumentMode};
 use crate::file_io;
 use crate::pdf_export::{self, PdfExportOutcome};
+use crate::printing::{self, PrintOutcome};
 use crate::render_assets;
 use crate::workspace::{DocumentWorkspace, WorkspaceOpenResult};
 
@@ -52,6 +53,7 @@ enum UserEvent {
     SaveDocument,
     SaveDocumentAs,
     ExportPdf,
+    PrintDocument,
     ToggleMode,
     EditorChanged(String),
     ShowAbout,
@@ -316,6 +318,7 @@ fn dispatch_user_event(proxy: &EventLoopProxy<UserEvent>, stage_source: &'static
         UserEvent::SaveDocument => (None, "SaveDocument", format!("source={stage_source}")),
         UserEvent::SaveDocumentAs => (None, "SaveDocumentAs", format!("source={stage_source}")),
         UserEvent::ExportPdf => (None, "ExportPdf", format!("source={stage_source}")),
+        UserEvent::PrintDocument => (None, "PrintDocument", format!("source={stage_source}")),
         UserEvent::ToggleMode => (None, "ToggleMode", format!("source={stage_source}")),
         UserEvent::EditorChanged(markdown) => (
             None,
@@ -452,6 +455,10 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
                             KeyCode::KeyS => {
                                 log_event("keyboard.shortcut", None, "keyboard shortcut triggered", "key=Command+S");
                                 dispatch_user_event(&proxy, "keyboard", UserEvent::SaveDocument);
+                            }
+                            KeyCode::KeyP => {
+                                log_event("keyboard.shortcut", None, "keyboard shortcut triggered", "key=Command+P");
+                                dispatch_user_event(&proxy, "keyboard", UserEvent::PrintDocument);
                             }
                             KeyCode::KeyW => {
                                 log_event("keyboard.shortcut", None, "keyboard shortcut triggered", "key=Command+W");
@@ -677,6 +684,25 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
                     }
                 }
             }
+            Event::UserEvent(UserEvent::PrintDocument) => {
+                log_event("user_event.received", None, "handling UserEvent::PrintDocument", "");
+                match workspace.active_document() {
+                    Some(document) => match printing::print_document(document) {
+                        Ok(PrintOutcome::Started) => {
+                            render_status(&webview, "Print panel opened.", "info");
+                        }
+                        Ok(PrintOutcome::Cancelled) => {
+                            render_status(&webview, "Print cancelled.", "info");
+                        }
+                        Err(message) => {
+                            render_status(&webview, &message, "error");
+                        }
+                    },
+                    None => {
+                        render_status(&webview, "No document opened.", "error");
+                    }
+                }
+            }
             Event::UserEvent(UserEvent::ToggleMode) => {
                 log_event("user_event.received", None, "handling UserEvent::ToggleMode", "");
                 let status = if let Some(document) = workspace.active_document_mut() {
@@ -777,6 +803,9 @@ fn handle_ipc_message(proxy: &EventLoopProxy<UserEvent>, payload: String) {
         }
         Some("request-export-pdf") => {
             dispatch_user_event(proxy, "ipc", UserEvent::ExportPdf);
+        }
+        Some("request-print") => {
+            dispatch_user_event(proxy, "ipc", UserEvent::PrintDocument);
         }
         Some("request-exit") => {
             dispatch_user_event(proxy, "ipc", UserEvent::Exit);
@@ -1779,6 +1808,9 @@ const APP_SHELL_HTML: &str = r##"<!DOCTYPE html>
         } else if (event.key.toLowerCase() === "s") {
           event.preventDefault();
           window.ipc.postMessage(JSON.stringify({ kind: "request-save" }));
+        } else if (event.key.toLowerCase() === "p") {
+          event.preventDefault();
+          window.ipc.postMessage(JSON.stringify({ kind: "request-print" }));
         } else if (event.key.toLowerCase() === "w") {
           event.preventDefault();
           window.ipc.postMessage(JSON.stringify({ kind: "close-current-document" }));
@@ -1998,6 +2030,7 @@ mod macos_menu {
     thread_local! {
         static EXPORT_PDF_ITEM: RefCell<Option<Retained<NSMenuItem>>> = const { RefCell::new(None) };
         static SAVE_AS_ITEM: RefCell<Option<Retained<NSMenuItem>>> = const { RefCell::new(None) };
+        static PRINT_ITEM: RefCell<Option<Retained<NSMenuItem>>> = const { RefCell::new(None) };
     }
 
     #[derive(Debug)]
@@ -2042,6 +2075,12 @@ mod macos_menu {
             fn export_pdf_document(&self, _sender: Option<&AnyObject>) {
                 super::log_event("macos.menu.action", None, "macOS menu action exportPdfDocument:", "");
                 super::dispatch_user_event(&self.ivars().proxy, "macos-menu", UserEvent::ExportPdf);
+            }
+
+            #[unsafe(method(printDocument:))]
+            fn print_document(&self, _sender: Option<&AnyObject>) {
+                super::log_event("macos.menu.action", None, "macOS menu action printDocument:", "");
+                super::dispatch_user_event(&self.ivars().proxy, "macos-menu", UserEvent::PrintDocument);
             }
 
             #[unsafe(method(toggleDocumentMode:))]
@@ -2195,6 +2234,22 @@ mod macos_menu {
         file_menu.addItem(&save_as_item);
         SAVE_AS_ITEM.with(|slot| {
             *slot.borrow_mut() = Some(save_as_item.clone());
+        });
+
+        let print_item = unsafe {
+            NSMenuItem::initWithTitle_action_keyEquivalent(
+                NSMenuItem::alloc(mtm),
+                ns_string!("Print"),
+                Some(sel!(printDocument:)),
+                ns_string!("p"),
+            )
+        };
+        unsafe { print_item.setTarget(Some((&**target).as_ref())) };
+        print_item.setKeyEquivalentModifierMask(NSEventModifierFlags::Command);
+        print_item.setEnabled(false);
+        file_menu.addItem(&print_item);
+        PRINT_ITEM.with(|slot| {
+            *slot.borrow_mut() = Some(print_item.clone());
         });
 
         let export_pdf_item = unsafe {
@@ -2424,6 +2479,11 @@ mod macos_menu {
     }
     pub fn set_document_output_enabled(enabled: bool) {
         SAVE_AS_ITEM.with(|slot| {
+            if let Some(item) = slot.borrow().as_ref() {
+                item.setEnabled(enabled);
+            }
+        });
+        PRINT_ITEM.with(|slot| {
             if let Some(item) = slot.borrow().as_ref() {
                 item.setEnabled(enabled);
             }
