@@ -59,6 +59,7 @@ enum UserEvent {
     ToggleMode,
     EditorChanged(String),
     ShowAbout,
+    OpenDocumentation,
     Exit,
 }
 
@@ -329,6 +330,7 @@ fn dispatch_user_event(proxy: &EventLoopProxy<UserEvent>, stage_source: &'static
             format!("source={} bytes={}", stage_source, markdown.len()),
         ),
         UserEvent::ShowAbout => (None, "ShowAbout", format!("source={stage_source}")),
+        UserEvent::OpenDocumentation => (None, "OpenDocumentation", format!("source={stage_source}")),
         UserEvent::Exit => (None, "Exit", format!("source={stage_source}")),
     };
 
@@ -770,6 +772,13 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
             Event::UserEvent(UserEvent::ShowAbout) => {
                 log_event("user_event.received", None, "handling UserEvent::ShowAbout", "");
                 render_about(&webview);
+            }
+            Event::UserEvent(UserEvent::OpenDocumentation) => {
+                log_event("user_event.received", None, "handling UserEvent::OpenDocumentation", "");
+                match documentation_markdown_path() {
+                    Some(path) => open_document(&window, &webview, &mut workspace, &path, None),
+                    None => render_status(&webview, "Documentation file not found.", "error"),
+                }
             }
             Event::UserEvent(UserEvent::Exit) => {
                 log_event("user_event.received", None, "handling UserEvent::Exit", "");
@@ -1268,6 +1277,22 @@ fn app_shell_html() -> String {
             "__MATHJAX_RUNTIME__",
             &render_assets::mathjax_runtime_for_inline_script(),
         )
+}
+
+fn documentation_markdown_path() -> Option<PathBuf> {
+    let candidates = [
+        std::env::current_dir()
+            .ok()
+            .map(|cwd| cwd.join("assets").join("help").join("Documentation.md")),
+        std::env::current_exe()
+            .ok()
+            .and_then(|exe| exe.parent().map(|dir| dir.join("../Resources/help/Documentation.md"))),
+        std::env::current_exe()
+            .ok()
+            .and_then(|exe| exe.parent().and_then(|dir| dir.parent()).map(|contents| contents.join("Resources/help/Documentation.md"))),
+    ];
+
+    candidates.into_iter().flatten().find(|path| path.exists())
 }
 
 fn should_recover_shell_on_page_load(url: &str) -> bool {
@@ -2163,6 +2188,12 @@ mod macos_menu {
                 super::dispatch_user_event(&self.ivars().proxy, "macos-menu", UserEvent::ShowAbout);
             }
 
+            #[unsafe(method(openDocumentation:))]
+            fn open_documentation(&self, _sender: Option<&AnyObject>) {
+                super::log_event("macos.menu.action", None, "macOS menu action openDocumentation:", "");
+                super::dispatch_user_event(&self.ivars().proxy, "macos-menu", UserEvent::OpenDocumentation);
+            }
+
             #[unsafe(method(exitApplication:))]
             fn exit_application(&self, _sender: Option<&AnyObject>) {
                 super::log_event("macos.menu.action", None, "macOS menu action exitApplication:", "");
@@ -2537,6 +2568,29 @@ mod macos_menu {
         tab_menu.addItem(&close_all_tabs_item);
 
         tab_menu_item.setSubmenu(Some(&tab_menu));
+
+        let help_menu_item = unsafe {
+            NSMenuItem::initWithTitle_action_keyEquivalent(
+                NSMenuItem::alloc(mtm),
+                ns_string!("Help"),
+                None,
+                ns_string!(""),
+            )
+        };
+        main_menu.addItem(&help_menu_item);
+
+        let help_menu = NSMenu::initWithTitle(NSMenu::alloc(mtm), ns_string!("Help"));
+        let documentation_item = unsafe {
+            NSMenuItem::initWithTitle_action_keyEquivalent(
+                NSMenuItem::alloc(mtm),
+                ns_string!("Documentation"),
+                Some(sel!(openDocumentation:)),
+                ns_string!(""),
+            )
+        };
+        unsafe { documentation_item.setTarget(Some((&**target).as_ref())) };
+        help_menu.addItem(&documentation_item);
+        help_menu_item.setSubmenu(Some(&help_menu));
 
         app.setMainMenu(Some(&main_menu));
         let _ = NSApp(mtm);
