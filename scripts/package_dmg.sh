@@ -59,6 +59,7 @@ build_app_bundle() {
   cp "$ROOT_DIR/target/release/markhola" "$MACOS_DIR/$APP_NAME"
   chmod +x "$MACOS_DIR/$APP_NAME"
   ditto "$ROOT_DIR/themes" "$RESOURCES_DIR/themes"
+  ditto "$ROOT_DIR/assets/help" "$RESOURCES_DIR/help"
 
   cat > "$CONTENTS_DIR/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
