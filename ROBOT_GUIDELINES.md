@@ -71,11 +71,11 @@ When implementing a new feature or a user-requested change in this repository, f
    - if the work is a bug fix or an improvement to an existing feature, increase the last version number by `+1`
    - if the work is a new feature that did not exist before, increase the middle version number by `+1`
 3. If the user directly requests a feature, record or update that feature in `PLAN.MD` under the target version before implementation.
-4. Write a technical design document for that feature before coding.
-5. If the user adjusts the technical design document after it was written, re-read the latest version of that document before proceeding, and treat that re-read as a required step in the flow.
-6. After the user accepts the technical design direction, refine the design document and add or update the relevant test cases.
+4. Write the technical design document and the matching test document for that feature together before coding.
+5. If the user adjusts either the design document or the test document after they were written, re-read the latest accepted versions before proceeding, and treat that re-read as a required step in the flow.
+6. After the user accepts the design and test direction, refine both documents together so the implementation scope and validation scope stay aligned.
 7. For user-visible features, also add or update a matching example Markdown file under `examples/` so users can verify the new capability after installing the new version.
-8. Start development only after the user confirms the design, tests, and example direction is OK.
+8. Start development only after the user confirms the design document, test document, and example direction is OK.
 9. Implement the feature in the smallest complete scope that satisfies the confirmed design.
 10. Run the existing validation command for the affected code path.
 11. Update `README.md` so the documented version and user-visible features match the target release.
@@ -89,3 +89,33 @@ For version tracking:
 - always keep the current development version aligned across implementation-related files
 - do not add feature work without making sure the target version is clear in the plan
 - keep `PLAN.MD`, `README.md`, technical design notes, tests, example files, implementation status, and release tag consistent with the same target version
+
+## 9. Rust Refactor Workflow
+
+When refactoring large Rust files, follow this workflow and constraints:
+
+1. Start with a Blueprint before coding:
+   - list the current pain points
+   - propose the target module/file structure
+   - estimate the resulting file sizes
+   - stop for confirmation before extraction work starts
+2. After confirmation, extract incrementally:
+   - move one logical submodule at a time
+   - keep `use` imports explicit in every file
+   - prefer `pub(crate)` or narrower visibility over broad `pub`
+3. Finish with Integration:
+   - reduce the host file to `mod` declarations, `pub use`, and minimal orchestration
+   - avoid leaving extracted logic behind in the host file
+
+Rust-specific constraints:
+
+- keep any single Rust file, including tests, around 200 lines when practical
+- prefer zero-cost abstractions such as generics, traits, and small inlineable helpers
+- handle ownership explicitly when moving code; document or encode when values are `Copy`, `Clone`, borrowed, or moved
+
+When choosing patterns for large Rust files:
+
+- use composition when a struct owns too many fields or responsibilities
+- use state pattern or typestate when branches mostly encode state transitions
+- use strategy pattern when multiple business branches are parallel algorithms
+- use builders or declarative macros when initialization or template code is repetitive
