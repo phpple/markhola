@@ -89,4 +89,4 @@ Create the macOS app bundle and DMG:
 
 ## GitHub
 
-<https://github.com/phpple/markhola>
+<https://github.com/huimang/markhola>
