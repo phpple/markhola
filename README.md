@@ -1,14 +1,17 @@
 # MarkHola
 
+![MarkHola logo](assets/logo.png)
+
 MarkHola is a lightweight desktop Markdown reader and editor built with Rust for Apple Silicon Macs.
 
 ## Current Version
 
-- `v0.7.3`
+- `v0.7.4`
 
 ## Features
 
 - Readonly and writable modes with `Command + /` mode switching
+- Create a new blank Markdown document with `File > New` or `Command + N`
 - Open local `.md` and `.markdown` files
 - Open and keep multiple Markdown documents in one window
 - Export the current document to PDF from `File > Export > PDF`
@@ -16,6 +19,7 @@ MarkHola is a lightweight desktop Markdown reader and editor built with Rust for
 - Print the current document from `File > Print`
 - Load the app shell theme from an editable `themes/default/layout.css` file
 - Save the current document with `Command + S`
+- Save a new unsaved document by choosing a path on first save
 - Save the current document to another path with `File > Save As`
 - Open the bundled documentation from `Help > Documentation`
 - Render headings, links, images, tables, lists, blockquotes, and code blocks
