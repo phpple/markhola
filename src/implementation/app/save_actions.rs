@@ -11,6 +11,9 @@ use crate::workspace::DocumentWorkspace;
 use super::workspace_view::{render_status, sync_workspace_state};
 
 pub(super) fn save_document(document: &mut ActiveDocument) -> Result<(), String> {
+    if document.is_draft() {
+        return Err("Draft documents must choose a save path first.".to_string());
+    }
     file_io::save_markdown(document.file_path(), document.markdown())?;
     document.mark_saved();
     Ok(())
@@ -21,6 +24,14 @@ pub(super) fn save_active_document(
     webview: &WebView,
     workspace: &mut DocumentWorkspace,
 ) -> bool {
+    if workspace
+        .active_document()
+        .map(ActiveDocument::is_draft)
+        .unwrap_or(false)
+    {
+        return save_active_document_as(window, webview, workspace);
+    }
+
     let Some(document) = workspace.active_document_mut() else {
         render_status(webview, "No document to save.", "error");
         return false;

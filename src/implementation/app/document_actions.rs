@@ -37,6 +37,16 @@ pub(super) fn open_document_dialog(event_id: u64) -> Option<PathBuf> {
     result
 }
 
+pub(super) fn create_blank_document(
+    window: &Window,
+    webview: &WebView,
+    workspace: &mut DocumentWorkspace,
+) {
+    let document = ActiveDocument::new_blank_with_id(workspace.next_document_id());
+    workspace.open_document(document);
+    present_workspace(window, webview, workspace, "New document created.", true);
+}
+
 pub(super) fn open_document(
     window: &Window,
     webview: &WebView,

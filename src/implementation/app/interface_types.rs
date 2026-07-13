@@ -6,6 +6,7 @@ use crate::document::{DocumentSnapshot, DocumentTabSnapshot};
 
 #[derive(Clone, Debug)]
 pub(crate) enum UserEvent {
+    NewDocument,
     OpenFile(ActionContext),
     OpenPath(OpenPathRequest),
     ActivateDocument(u64),

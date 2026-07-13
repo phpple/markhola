@@ -68,6 +68,7 @@ fn describe_user_event(
     event: &UserEvent,
 ) -> (Option<u64>, &'static str, String) {
     match event {
+        UserEvent::NewDocument => (None, "NewDocument", format!("source={stage_source}")),
         UserEvent::OpenFile(ctx) => (
             Some(ctx.event_id),
             "OpenFile",
