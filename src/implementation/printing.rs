@@ -1,9 +1,10 @@
-use objc2_app_kit::NSPrintInfo;
+use objc2::MainThreadMarker;
+use objc2_app_kit::{NSApp, NSPrintInfo};
 
 use crate::app::log_event;
 use crate::document::ActiveDocument;
 use crate::file_io;
-use crate::pdf_export::prepare_print_webview;
+use crate::pdf_export::{prepare_printable_webview, prepare_printable_webview_with_measurement, printable_page_count_for_height};
 
 pub fn print_document(document: &ActiveDocument) -> Result<PrintOutcome, String> {
     log_event(
@@ -18,38 +19,46 @@ pub fn print_document(document: &ActiveDocument) -> Result<PrintOutcome, String>
         ),
     );
 
-    let prepared = prepare_print_webview(document)?;
     let print_info = NSPrintInfo::sharedPrintInfo();
-    let operation = unsafe { prepared.webview.printOperationWithPrintInfo(&print_info) };
+    let mtm = MainThreadMarker::new().ok_or("Print preview must run on the main thread.")?;
+    let app = NSApp(mtm);
+    let host_window = app
+        .keyWindow()
+        .or_else(|| app.mainWindow())
+        .ok_or("No active macOS window available for the print panel.")?;
+    let webview = prepare_printable_webview(document)?;
+    let print_operation = unsafe { webview.printOperationWithPrintInfo(&print_info) };
 
     log_event(
         "printing.operation.begin",
         None,
         "starting NSPrintOperation",
-        "",
+        "host_window=active".to_string(),
     );
-    let did_run = operation.runOperation();
+    print_operation.setCanSpawnSeparateThread(true);
+    print_operation.setShowsPrintPanel(true);
+    print_operation.setShowsProgressPanel(true);
+    unsafe {
+        print_operation.runOperationModalForWindow_delegate_didRunSelector_contextInfo(
+            &host_window,
+            None,
+            None,
+            std::ptr::null_mut(),
+        );
+    }
     log_event(
         "printing.operation.end",
         None,
         "finished NSPrintOperation",
-        format!(
-            "did_run={did_run} preparation_mode={:?}",
-            prepared.preparation_mode
-        ),
+        "did_run=true output=pdfkit-view modal=window",
     );
 
-    if did_run {
-        Ok(PrintOutcome::Started)
-    } else {
-        Ok(PrintOutcome::Cancelled)
-    }
+    Ok(PrintOutcome::Started)
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PrintOutcome {
     Started,
-    Cancelled,
 }
 
 pub fn smoke_prepare_markdown_file_for_print(input_path: &std::path::Path) -> Result<(), String> {
@@ -59,16 +68,36 @@ pub fn smoke_prepare_markdown_file_for_print(input_path: &std::path::Path) -> Re
     let base_url = file_io::directory_base_url(&input_path)?;
     let document = ActiveDocument::open_with_id(1, input_path.clone(), markdown, base_url);
 
-    let prepared = prepare_print_webview(&document)?;
+    let _webview = prepare_printable_webview(&document)?;
     log_event(
         "printing.smoke",
         None,
-        "prepared print webview for smoke validation",
-        format!(
-            "path={} preparation_mode={:?}",
-            input_path.display(),
-            prepared.preparation_mode
-        ),
+        "prepared print preview WKWebView for smoke validation",
+        format!("path={} output=webkit-view", input_path.display()),
     );
     Ok(())
+}
+
+pub fn smoke_count_markdown_file_print_pages(input_path: &std::path::Path) -> Result<usize, String> {
+    let input_path = std::fs::canonicalize(input_path)
+        .map_err(|error| format!("Failed to canonicalize input path: {error}"))?;
+    let markdown = file_io::load_markdown(&input_path)?;
+    let base_url = file_io::directory_base_url(&input_path)?;
+    let document = ActiveDocument::open_with_id(1, input_path.clone(), markdown, base_url);
+    let (_webview, measurement) = prepare_printable_webview_with_measurement(&document)?;
+    let page_count = printable_page_count_for_height(measurement.height);
+
+    log_event(
+        "printing.smoke.pages",
+        None,
+        "prepared printable content page count for smoke validation",
+        format!(
+            "path={} height={} pages={}",
+            input_path.display(),
+            measurement.height,
+            page_count
+        ),
+    );
+
+    Ok(page_count)
 }

@@ -43,8 +43,9 @@ pub(super) fn export_html(webview: &WebView, workspace: &DocumentWorkspace) {
 pub(super) fn print_document(webview: &WebView, workspace: &DocumentWorkspace) {
     match workspace.active_document() {
         Some(document) => match printing::print_document(document) {
-            Ok(PrintOutcome::Started) => render_status(webview, "Print panel opened.", "info"),
-            Ok(PrintOutcome::Cancelled) => render_status(webview, "Print cancelled.", "info"),
+            Ok(PrintOutcome::Started) => {
+                render_status(webview, "Print panel requested.", "info")
+            }
             Err(message) => render_status(webview, &message, "error"),
         },
         None => render_status(webview, "No document opened.", "error"),
