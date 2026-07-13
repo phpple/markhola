@@ -31,7 +31,7 @@ require_command() {
 render_icon() {
   local size="$1"
   local output="$2"
-  rsvg-convert -w "$size" -h "$size" "$ROOT_DIR/assets/app-icon.svg" -o "$output"
+  sips -z "$size" "$size" "$ROOT_DIR/assets/logo.png" --out "$output" >/dev/null
 }
 
 build_app_bundle() {
@@ -60,6 +60,7 @@ build_app_bundle() {
   chmod +x "$MACOS_DIR/$APP_NAME"
   ditto "$ROOT_DIR/themes" "$RESOURCES_DIR/themes"
   ditto "$ROOT_DIR/assets/help" "$RESOURCES_DIR/help"
+  cp "$ROOT_DIR/assets/logo.png" "$RESOURCES_DIR/logo.png"
 
   cat > "$CONTENTS_DIR/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
@@ -224,7 +225,7 @@ sign_and_notarize_dmg() {
 }
 
 require_command cargo
-require_command rsvg-convert
+require_command sips
 require_command codesign
 require_command hdiutil
 require_command ditto
