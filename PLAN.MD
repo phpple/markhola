@@ -76,6 +76,13 @@ This is another markdown reader and exporter software.Written by AI, free are th
 3. Code split. Reduce the single rs file size, split to three parts: interface,implements,tests.
 
 ### v0.7.4
+1. Support creating blank Markdown documents
+2. Save a new unsaved document by choosing a path first
+3. Fix Mermaid and other async-rendered diagrams missing from the print output
+4. Fix the case where print preview is visible but the actual printed paper is blank
+5. Replace the app branding logo everywhere with `assets/logo.png`
+
+### v0.7.5
 1. Support `[toc]`
 2. Enable to choose multiple markdown files while use "open file"
 
