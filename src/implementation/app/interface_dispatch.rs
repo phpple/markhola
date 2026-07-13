@@ -3,7 +3,7 @@ use std::sync::atomic::Ordering;
 use tao::event_loop::EventLoopProxy;
 
 use super::interface_constants::{NEXT_EVENT_ID, PANIC_HOOK_ONCE};
-use super::interface_types::{ActionContext, UserEvent};
+use super::interface_types::{ActionContext, EditCommand, UserEvent};
 use super::log_event;
 
 pub(crate) fn next_event_id() -> u64 {
@@ -133,6 +133,11 @@ fn describe_user_event(
         UserEvent::ExportHtml => (None, "ExportHtml", format!("source={stage_source}")),
         UserEvent::PrintDocument => (None, "PrintDocument", format!("source={stage_source}")),
         UserEvent::OpenFind => (None, "OpenFind", format!("source={stage_source}")),
+        UserEvent::EditCommand(command) => (
+            None,
+            "EditCommand",
+            format!("source={} command={}", stage_source, edit_command_name(*command)),
+        ),
         UserEvent::ToggleMode => (None, "ToggleMode", format!("source={stage_source}")),
         UserEvent::EditorChanged(markdown) => (
             None,
@@ -144,5 +149,16 @@ fn describe_user_event(
             (None, "OpenDocumentation", format!("source={stage_source}"))
         }
         UserEvent::Exit => (None, "Exit", format!("source={stage_source}")),
+    }
+}
+
+fn edit_command_name(command: EditCommand) -> &'static str {
+    match command {
+        EditCommand::Undo => "undo",
+        EditCommand::Redo => "redo",
+        EditCommand::Cut => "cut",
+        EditCommand::Copy => "copy",
+        EditCommand::Paste => "paste",
+        EditCommand::SelectAll => "select-all",
     }
 }

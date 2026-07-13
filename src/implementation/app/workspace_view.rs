@@ -9,6 +9,8 @@ use super::{
 };
 #[cfg(target_os = "macos")]
 use super::macos_menu;
+#[cfg(target_os = "windows")]
+use super::windows_menu;
 
 pub(super) fn present_workspace(
     window: &Window,
@@ -29,6 +31,8 @@ pub(super) fn present_workspace(
 pub(super) fn sync_native_menu_state(_workspace: &DocumentWorkspace) {
     #[cfg(target_os = "macos")]
     macos_menu::set_document_output_enabled(_workspace.active_document().is_some());
+    #[cfg(target_os = "windows")]
+    windows_menu::sync_workspace_state(_workspace);
 }
 
 pub(super) fn sync_workspace_state(

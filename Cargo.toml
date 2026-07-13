@@ -27,5 +27,9 @@ objc2-core-foundation = { version = "=0.3.2", features = ["CFCGTypes", "objc2"] 
 objc2-foundation = { version = "=0.3.2", features = ["NSData", "NSDate", "NSError", "NSRunLoop", "NSString", "NSURL"] }
 objc2-web-kit = { version = "=0.3.2", features = ["WKContentWorld", "WKFrameInfo", "WKNavigation", "WKPDFConfiguration", "WKWebView", "WKWebViewConfiguration", "block2", "objc2-app-kit"] }
 
+[target.'cfg(target_os = "windows")'.dependencies]
+windows = { version = "=0.61.3", features = ["Win32_Foundation", "Win32_UI_WindowsAndMessaging"] }
+webview2-com = "=0.38.2"
+
 [patch.crates-io]
 wry = { path = "vendor\\wry-0.53.5" }

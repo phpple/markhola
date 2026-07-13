@@ -1395,6 +1395,39 @@ impl InnerWebView {
     unsafe { self.webview.Reload() }.map_err(Into::into)
   }
 
+  pub fn print_to_pdf(&self, path: &std::path::Path) -> Result<()> {
+    let webview = self.webview.cast::<ICoreWebView2_7>()?;
+    let environment = self.env.cast::<ICoreWebView2Environment6>()?;
+    let settings = unsafe { environment.CreatePrintSettings()? };
+    unsafe {
+      settings.SetShouldPrintBackgrounds(true)?;
+      settings.SetShouldPrintHeaderAndFooter(false)?;
+    }
+
+    let (tx, rx) = mpsc::channel();
+    let path = HSTRING::from(path.as_os_str());
+    unsafe {
+      webview.PrintToPdf(
+        &path,
+        Some(&settings),
+        &PrintToPdfCompletedHandler::create(Box::new(move |result, ok| {
+          tx.send((result, ok))
+            .map_err(|_| windows::core::Error::from(E_UNEXPECTED))
+        })),
+      )?;
+    }
+
+    let (result, ok) = webview2_com::wait_with_pump(rx)?;
+    result.map_err(Error::from)?;
+    if ok {
+      Ok(())
+    } else {
+      Err(Error::WebView2Error(webview2_com::Error::CallbackError(
+        "PrintToPdf reported failure.".to_string(),
+      )))
+    }
+  }
+
   pub fn bounds(&self) -> Result<Rect> {
     let mut bounds = Rect::default();
     let mut rect = RECT::default();

@@ -13,7 +13,7 @@ use super::runtime::AppRuntime;
 use super::save_actions::{save_active_document, save_active_document_as};
 use super::shell_events::{handle_shell_ready, open_documentation, recover_shell};
 use super::workspace_view::{present_workspace, render_about, render_status, sync_workspace_state};
-use super::{OpenPathRequest, UserEvent, log_event};
+use super::{EditCommand, OpenPathRequest, UserEvent, log_event};
 
 pub(super) fn handle_user_event(
     user_event: UserEvent,
@@ -47,14 +47,17 @@ pub(super) fn handle_user_event(
         UserEvent::SaveDocumentAs => {
             save_active_document_as(&runtime.window, &runtime.webview, &mut runtime.workspace);
         }
-        UserEvent::ExportPdf => export_actions::export_pdf(&runtime.webview, &runtime.workspace),
+        UserEvent::ExportPdf => {
+            export_actions::export_pdf(&runtime.window, &runtime.webview, &runtime.workspace)
+        }
         UserEvent::ExportHtml => export_actions::export_html(&runtime.webview, &runtime.workspace),
         UserEvent::PrintDocument => {
-            export_actions::print_document(&runtime.webview, &runtime.workspace)
+            export_actions::print_document(&runtime.window, &runtime.webview, &runtime.workspace)
         }
         UserEvent::OpenFind => {
             export_actions::open_find_panel(&runtime.webview, &runtime.workspace)
         }
+        UserEvent::EditCommand(command) => perform_edit_command(command, runtime),
         UserEvent::ToggleMode => toggle_mode(runtime),
         UserEvent::EditorChanged(markdown) => editor_changed(markdown, runtime),
         UserEvent::ShowAbout => render_about(&runtime.webview),
@@ -152,4 +155,19 @@ fn open_external_link(href: &str, runtime: &AppRuntime) {
             "error",
         );
     }
+}
+
+fn perform_edit_command(command: EditCommand, runtime: &AppRuntime) {
+    let command = match command {
+        EditCommand::Undo => "undo",
+        EditCommand::Redo => "redo",
+        EditCommand::Cut => "cut",
+        EditCommand::Copy => "copy",
+        EditCommand::Paste => "paste",
+        EditCommand::SelectAll => "selectAll",
+    };
+    let serialized = serde_json::to_string(command).unwrap_or_else(|_| "\"copy\"".to_string());
+    let _ = runtime
+        .webview
+        .evaluate_script(&format!("window.performEditCommand({serialized});"));
 }

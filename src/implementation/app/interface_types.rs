@@ -4,6 +4,16 @@ use serde::Serialize;
 
 use crate::document::{DocumentSnapshot, DocumentTabSnapshot};
 
+#[derive(Clone, Copy, Debug)]
+pub(crate) enum EditCommand {
+    Undo,
+    Redo,
+    Cut,
+    Copy,
+    Paste,
+    SelectAll,
+}
+
 #[derive(Clone, Debug)]
 pub(crate) enum UserEvent {
     OpenFile(ActionContext),
@@ -24,6 +34,7 @@ pub(crate) enum UserEvent {
     ExportHtml,
     PrintDocument,
     OpenFind,
+    EditCommand(EditCommand),
     ToggleMode,
     EditorChanged(String),
     ShowAbout,

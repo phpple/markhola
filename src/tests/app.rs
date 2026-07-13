@@ -72,12 +72,10 @@ fn app_shell_includes_find_panel_markup_and_handlers() {
     let html = app_shell_html();
 
     assert!(html.contains("id=\"findPanel\""));
-    assert!(html.contains("data-command=\"open-file\""));
-    assert!(html.contains("data-command=\"request-open-documentation\""));
     assert!(html.contains("window.openFindPanel = openFindPanel;"));
+    assert!(html.contains("window.performEditCommand = performEditCommand;"));
     assert!(html.contains("className = \"find-match\""));
     assert!(html.contains("replaceAllWritableMatches"));
     assert!(html.contains("event.key.toLowerCase() === \"f\""));
     assert!(html.contains("primaryShortcutUsesMetaKey"));
-    assert!(html.contains("request-show-about"));
 }

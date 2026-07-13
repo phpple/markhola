@@ -2017,6 +2017,12 @@ impl WebView {
     self.webview.print()
   }
 
+  /// Print the current webview content to a PDF file.
+  #[cfg(target_os = "windows")]
+  pub fn print_to_pdf(&self, path: &std::path::Path) -> Result<()> {
+    self.webview.print_to_pdf(path)
+  }
+
   /// Get a list of cookies for specific url.
   pub fn cookies_for_url(&self, url: &str) -> Result<Vec<cookie::Cookie<'static>>> {
     self.webview.cookies_for_url(url)

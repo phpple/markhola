@@ -17,6 +17,7 @@ use objc2_web_kit::{WKContentWorld, WKPDFConfiguration, WKWebView, WKWebViewConf
 use rfd::FileDialog;
 use serde::Deserialize;
 use serde_json::Value;
+use tao::window::Window;
 
 use crate::app::log_event;
 use crate::document::ActiveDocument;
@@ -396,7 +397,7 @@ pub(crate) struct PreparedPrintWebView {
     pub preparation_mode: ExportPreparationMode,
 }
 
-pub fn export_document(document: &ActiveDocument) -> Result<PdfExportOutcome, String> {
+pub fn export_document(_window: &Window, document: &ActiveDocument) -> Result<PdfExportOutcome, String> {
     log_event(
         "pdf_export.begin",
         None,
@@ -494,6 +495,7 @@ fn write_export(
 }
 
 pub(crate) fn prepare_print_webview(
+    _window: &Window,
     document: &ActiveDocument,
 ) -> Result<PreparedPrintWebView, String> {
     let rendered_document_html = markdown::render_html(document.markdown());

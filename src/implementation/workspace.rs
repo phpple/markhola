@@ -48,6 +48,10 @@ impl DocumentWorkspace {
         self.documents.iter().map(ActiveDocument::id).collect()
     }
 
+    pub fn document_count(&self) -> usize {
+        self.documents.len()
+    }
+
     pub fn other_document_ids(&self, active_document_id: u64) -> Vec<u64> {
         self.documents
             .iter()

@@ -1,11 +1,12 @@
 use objc2_app_kit::NSPrintInfo;
+use tao::window::Window;
 
 use crate::app::log_event;
 use crate::document::ActiveDocument;
 use crate::file_io;
 use crate::pdf_export::prepare_print_webview;
 
-pub fn print_document(document: &ActiveDocument) -> Result<PrintOutcome, String> {
+pub fn print_document(_window: &Window, document: &ActiveDocument) -> Result<PrintOutcome, String> {
     log_event(
         "printing.begin",
         None,
@@ -18,7 +19,7 @@ pub fn print_document(document: &ActiveDocument) -> Result<PrintOutcome, String>
         ),
     );
 
-    let prepared = prepare_print_webview(document)?;
+    let prepared = prepare_print_webview(_window, document)?;
     let print_info = NSPrintInfo::sharedPrintInfo();
     let operation = unsafe { prepared.webview.printOperationWithPrintInfo(&print_info) };
 
@@ -59,7 +60,15 @@ pub fn smoke_prepare_markdown_file_for_print(input_path: &std::path::Path) -> Re
     let base_url = file_io::directory_base_url(&input_path)?;
     let document = ActiveDocument::open_with_id(1, input_path.clone(), markdown, base_url);
 
-    let prepared = prepare_print_webview(&document)?;
+    let event_loop = tao::event_loop::EventLoopBuilder::<()>::new().build();
+    let host_window = tao::window::WindowBuilder::new()
+        .with_visible(false)
+        .with_title("MarkHola Print Prepare")
+        .with_inner_size(tao::dpi::LogicalSize::new(32.0, 32.0))
+        .build(&event_loop)
+        .map_err(|error| format!("Failed to create temporary print window: {error}"))?;
+
+    let prepared = prepare_print_webview(&host_window, &document)?;
     log_event(
         "printing.smoke",
         None,

@@ -3,6 +3,8 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
+#[cfg(target_os = "windows")]
+use tao::platform::windows::EventLoopBuilderExtWindows;
 use tao::dpi::LogicalSize;
 use tao::event_loop::{EventLoop, EventLoopBuilder, EventLoopProxy};
 use tao::window::WindowBuilder;
@@ -13,9 +15,14 @@ use super::shell::{APP_SHELL_URL, app_shell_html, should_dispatch_shell_recovery
 use super::{APP_AUTHOR, UserEvent, WINDOW_TITLE, dispatch_user_event, log_event};
 #[cfg(target_os = "macos")]
 use super::macos_menu;
+#[cfg(target_os = "windows")]
+use super::windows_menu;
 
 pub(super) fn build_runtime() -> Result<(EventLoop<UserEvent>, AppRuntime), Box<dyn Error>> {
-    let event_loop = EventLoopBuilder::<UserEvent>::with_user_event().build();
+    let mut event_loop_builder = EventLoopBuilder::<UserEvent>::with_user_event();
+    #[cfg(target_os = "windows")]
+    event_loop_builder.with_msg_hook(windows_menu::handle_msg_hook);
+    let event_loop = event_loop_builder.build();
     let proxy = event_loop.create_proxy();
     let suppress_blank_recovery = Arc::new(AtomicBool::new(true));
 
@@ -28,6 +35,8 @@ pub(super) fn build_runtime() -> Result<(EventLoop<UserEvent>, AppRuntime), Box<
 
     #[cfg(target_os = "macos")]
     macos_menu::install(&proxy)?;
+    #[cfg(target_os = "windows")]
+    windows_menu::install(&window, proxy.clone())?;
 
     let runtime = AppRuntime::new(proxy, window, webview, suppress_blank_recovery);
     Ok((event_loop, runtime))

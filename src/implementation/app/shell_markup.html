@@ -16,11 +16,6 @@
                 <div class="empty-card">
                   <h2>No document opened</h2>
                   <p>Open, drag, or drop a Markdown file to preview or edit the current Markdown source.</p>
-                  <div class="workspace-actions workspace-actions--empty">
-                    <button class="workspace-action workspace-action--primary" type="button" data-command="open-file">Open</button>
-                    <button class="workspace-action" type="button" data-command="request-open-documentation">Documentation</button>
-                    <button class="workspace-action" type="button" data-command="request-show-about">About</button>
-                  </div>
                 </div>
               </div>
               <div class="preview pane hidden" id="previewPane">
@@ -28,16 +23,6 @@
                   <div class="preview-title">
                     <strong id="documentTitle">Preview</strong>
                     <span id="documentSubtitle">__DOCUMENT_SUBTITLE__</span>
-                  </div>
-                  <div class="workspace-actions">
-                    <button class="workspace-action workspace-action--primary" type="button" data-command="open-file">Open</button>
-                    <button class="workspace-action" type="button" data-command="request-save" data-requires-document="true">Save</button>
-                    <button class="workspace-action" type="button" data-command="request-save-as" data-requires-document="true">Save As</button>
-                    <button class="workspace-action" type="button" data-command="request-export-html" data-requires-document="true">Export HTML</button>
-                    <button class="workspace-action" type="button" data-command="request-export-pdf" data-requires-document="true">Export PDF</button>
-                    <button class="workspace-action" type="button" data-command="request-print" data-requires-document="true">Print</button>
-                    <button class="workspace-action" type="button" data-command="request-open-documentation">Documentation</button>
-                    <button class="workspace-action" type="button" data-command="request-show-about">About</button>
                   </div>
                   <span id="status" class="status" data-level="info">Ready.</span>
                   <div class="find-panel hidden" id="findPanel">

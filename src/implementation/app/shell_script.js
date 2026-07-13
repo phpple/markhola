@@ -46,9 +46,6 @@
       const aboutBuild = document.getElementById("aboutBuild");
       const aboutGithub = document.getElementById("aboutGithub");
       const aboutCopy = document.getElementById("aboutCopy");
-      const documentCommandButtons = Array.from(
-        document.querySelectorAll("[data-requires-document=\"true\"]")
-      );
       let mermaidInitialized = false;
       let mathJaxReadyPromise = null;
       let currentDocumentId = null;
@@ -68,12 +65,6 @@
 
       const sendIpc = (kind) => {
         window.ipc.postMessage(JSON.stringify({ kind }));
-      };
-
-      const setDocumentCommandAvailability = (enabled) => {
-        documentCommandButtons.forEach((button) => {
-          button.disabled = !enabled;
-        });
       };
 
       const insertIndent = () => {
@@ -186,6 +177,44 @@
         document.execCommand(command);
       };
 
+      const performEditCommand = (command) => {
+        const activeElement = document.activeElement;
+
+        if (isWritableMode()) {
+          if (command === "selectAll") {
+            if (activeElement === editor || activeElement === document.body) {
+              selectAllEditorText();
+              return;
+            }
+          } else if (["undo", "redo", "cut", "copy", "paste"].includes(command)) {
+            if (activeElement === editor || activeElement === document.body) {
+              runEditorCommand(command);
+              return;
+            }
+          }
+        }
+
+        if (
+          command === "selectAll" &&
+          (activeElement instanceof HTMLInputElement || activeElement instanceof HTMLTextAreaElement)
+        ) {
+          activeElement.select();
+          return;
+        }
+
+        if (command === "selectAll") {
+          const selection = window.getSelection();
+          if (!selection) return;
+          const range = document.createRange();
+          range.selectNodeContents(isWritableMode() ? editor : content);
+          selection.removeAllRanges();
+          selection.addRange(range);
+          return;
+        }
+
+        document.execCommand(command);
+      };
+
       const attachHeaderForMode = (mode) => {
         if (mode === "writable") {
           if (editorPane.firstElementChild !== previewHeader) {
@@ -240,7 +269,6 @@
         modeState.innerHTML = "<strong>Mode</strong> Readonly";
         saveState.innerHTML = "<strong>Status</strong> Ready.";
         documentBase.setAttribute("href", "");
-        setDocumentCommandAvailability(false);
         showPaneForMode(null);
         window.showStatus({ message: statusMessage || "Ready.", level: "info" });
       };
@@ -263,7 +291,6 @@
         modeState.innerHTML = `<strong>Mode</strong> ${active.mode_label}`;
         saveState.innerHTML = `<strong>Status</strong> ${active.save_status}`;
         documentBase.setAttribute("href", active.base_url);
-        setDocumentCommandAvailability(true);
         showPaneForMode(active.mode);
         window.showStatus({ message: payload.status_message, level: active.dirty ? "warning" : "info" });
       };
@@ -871,16 +898,6 @@
       });
 
       document.addEventListener("click", (event) => {
-        const commandButton = event.target.closest("[data-command]");
-        if (commandButton) {
-          event.preventDefault();
-          const kind = commandButton.getAttribute("data-command") || "";
-          if (kind) {
-            sendIpc(kind);
-          }
-          return;
-        }
-
         const statusAction = event.target.closest("[data-open-path]");
         if (statusAction) {
           event.preventDefault();
@@ -1015,6 +1032,7 @@
       };
 
       window.openFindPanel = openFindPanel;
+      window.performEditCommand = performEditCommand;
 
       window.ipc.postMessage(JSON.stringify({ kind: "shell-ready" }));
     </script>

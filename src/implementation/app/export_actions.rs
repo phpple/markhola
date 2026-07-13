@@ -2,13 +2,14 @@ use crate::html_export::{self, HtmlExportOutcome};
 use crate::pdf_export::{self, PdfExportOutcome};
 use crate::printing::{self, PrintOutcome};
 use crate::workspace::DocumentWorkspace;
+use tao::window::Window;
 use wry::WebView;
 
 use super::workspace_view::{render_status, render_status_with_action};
 
-pub(super) fn export_pdf(webview: &WebView, workspace: &DocumentWorkspace) {
+pub(super) fn export_pdf(window: &Window, webview: &WebView, workspace: &DocumentWorkspace) {
     match workspace.active_document() {
-        Some(document) => match pdf_export::export_document(document) {
+        Some(document) => match pdf_export::export_document(window, document) {
             Ok(PdfExportOutcome::Exported(path)) => render_status_with_action(
                 webview,
                 &format!("Exported PDF: {}", path.display()),
@@ -40,9 +41,9 @@ pub(super) fn export_html(webview: &WebView, workspace: &DocumentWorkspace) {
     }
 }
 
-pub(super) fn print_document(webview: &WebView, workspace: &DocumentWorkspace) {
+pub(super) fn print_document(window: &Window, webview: &WebView, workspace: &DocumentWorkspace) {
     match workspace.active_document() {
-        Some(document) => match printing::print_document(document) {
+        Some(document) => match printing::print_document(window, document) {
             Ok(PrintOutcome::Started) => render_status(webview, "Print panel opened.", "info"),
             Ok(PrintOutcome::Cancelled) => render_status(webview, "Print cancelled.", "info"),
             Err(message) => render_status(webview, &message, "error"),
