@@ -12,12 +12,12 @@ MarkHola is a lightweight desktop Markdown reader and editor for macOS and Windo
 - Edit Markdown content in writable mode
 - Switch between readonly and writable modes with `Command + /` on macOS or `Ctrl + /` on Windows
 - Save the current file with `Command + S` on macOS or `Ctrl + S` on Windows
-- Save the current file to another path with `File > Save As` on macOS or the in-window action bar on Windows
-- Export the current document to PDF on macOS
+- Save the current file to another path with `File > Save As`
+- Export the current document to PDF
 - Export the current document to HTML
-- Print the current document on macOS
+- Print the current document
 - Open multiple Markdown files in one window
-- Open the built-in documentation from the Help menu on macOS or the in-window action bar on Windows
+- Open the built-in documentation from the Help menu
 - Use `Command + F` on macOS or `Ctrl + F` on Windows to find text in readonly mode
 - Use `Command + F` on macOS or `Ctrl + F` on Windows to find and replace text in writable mode
 
@@ -60,5 +60,6 @@ MarkHola is a lightweight desktop Markdown reader and editor for macOS and Windo
 - Writable mode keeps the Markdown source editable.
 - Writable mode supports in-page find, replace, and replace all on the current document.
 - Exported and printed output are based on the current rendered document.
-- PDF export and printing are currently available on macOS.
-- Windows 11 exposes Open, Save, Save As, Export, Documentation, and About through the in-window action bar.
+- PDF export is available on macOS and Windows 11.
+- Printing is available on macOS and Windows 11.
+- Windows 11 uses native menus to expose document, edit, tab, and help actions.

@@ -11,13 +11,13 @@ MarkHola is a lightweight desktop Markdown reader and editor built with Rust for
 - Readonly and writable modes with the platform-native primary shortcut (`Command + /` on macOS, `Ctrl + /` on Windows)
 - Open local `.md` and `.markdown` files
 - Open and keep multiple Markdown documents in one window
-- Export the current document to PDF from `File > Export > PDF` on macOS
+- Export the current document to PDF from `File > Export > PDF`
 - Export the current document to HTML from `File > Export > HTML`
-- Print the current document from `File > Print` on macOS
+- Print the current document from `File > Print`
 - Load the app shell theme from an editable `themes/default/layout.css` file
 - Save the current document with the platform-native primary shortcut (`Command + S` on macOS, `Ctrl + S` on Windows)
-- Save the current document to another path with `File > Save As` on macOS or the in-window action bar on Windows
-- Open the bundled documentation from `Help > Documentation` on macOS or the in-window action bar on Windows
+- Save the current document to another path with `File > Save As`
+- Open the bundled documentation from `Help > Documentation`
 - Render headings, links, images, tables, lists, blockquotes, and code blocks
 - Syntax-highlighted fenced code blocks in readonly mode
 - Improved mainstream language highlight coverage for fenced code blocks
@@ -45,8 +45,9 @@ MarkHola is a lightweight desktop Markdown reader and editor built with Rust for
 
 ## Platform Notes
 
-- PDF export and printing are currently available on macOS.
-- Windows 11 supports opening Markdown files from Explorer or the command line, reading, editing, saving, multi-tab documents, drag and drop, the in-window action bar, and platform-native `Ctrl` shortcuts.
+- PDF export is available on macOS and Windows 11.
+- Printing is available on macOS and Windows 11.
+- Windows 11 supports opening Markdown files from Explorer or the command line, reading, editing, saving, PDF exporting, printing, multi-tab documents, drag and drop, native menus, and platform-native `Ctrl` shortcuts.
 
 ## Tech Stack
 

@@ -36,10 +36,9 @@ Run this extended command when packaging a release candidate:
 
 6. PDF export regression
    Open `examples/pdf-export.md`.
-   Expected on macOS: `File > Export > PDF` exports the current active tab only.
-   Expected on macOS: the exported PDF keeps headings, table, code block, image, and math content.
-   Expected on macOS: exporting from writable mode includes unsaved edits.
-   Expected on Windows 11: `Export PDF` shows that PDF export is currently unavailable.
+   Expected: `File > Export > PDF` exports the current active tab only.
+   Expected: the exported PDF keeps headings, table, code block, image, and math content.
+   Expected: exporting from writable mode includes unsaved edits.
 
 7. HTML export regression
    Open `examples/basic.md`.
@@ -48,10 +47,9 @@ Run this extended command when packaging a release candidate:
 
 8. Print regression
    Open `examples/basic.md` and `examples/mermaid.md`.
-   Expected on macOS: `File > Print` and `Command + P` both open the system print panel for the current active tab.
-   Expected on macOS: the print panel content reflects the current document instead of the application shell.
-   Expected on macOS: writable-mode unsaved edits are included in the printed content.
-   Expected on Windows 11: `Print` shows that printing is currently unavailable.
+   Expected: `File > Print` and the platform print shortcut both open the system print panel for the current active tab.
+   Expected: the print panel content reflects the current document instead of the application shell.
+   Expected: writable-mode unsaved edits are included in the printed content.
 
 9. Find regression
    Open `examples/basic.md`.
