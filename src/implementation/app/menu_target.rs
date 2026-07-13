@@ -20,6 +20,15 @@ define_class!(
 unsafe impl NSObjectProtocol for MenuTarget {}
 
     impl MenuTarget {
+        #[unsafe(method(newMenuDocument:))]
+        fn new_menu_document(&self, _sender: Option<&AnyObject>) {
+            emit(
+                &self.ivars().proxy,
+                UserEvent::NewDocument,
+                "newMenuDocument:",
+            );
+        }
+
         #[unsafe(method(openMenuDocument:))]
         fn open_menu_document(&self, _sender: Option<&AnyObject>) {
             let ctx = new_action_context("macos-menu-open");

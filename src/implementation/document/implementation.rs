@@ -30,6 +30,7 @@ impl ActiveDocument {
 
         Self {
             id,
+            draft: false,
             file_path: path,
             canonical_path,
             file_name,
@@ -45,11 +46,36 @@ impl ActiveDocument {
         }
     }
 
+    pub fn new_blank_with_id(id: u64) -> Self {
+        let draft_path = std::env::current_dir()
+            .unwrap_or_else(|_| std::env::temp_dir())
+            .join(format!(".markhola-draft-{id}.md"));
+        let base_url = file_io_base_url(&draft_path);
+        let markdown = String::new();
+
+        Self {
+            id,
+            draft: true,
+            file_path: draft_path.clone(),
+            canonical_path: draft_path,
+            file_name: "Untitled".to_string(),
+            title: "Untitled".to_string(),
+            saved_markdown: markdown.clone(),
+            markdown,
+            html: String::new(),
+            base_url,
+            word_count: 0,
+            line_count: 0,
+            mode: DocumentMode::Writable,
+            dirty: false,
+        }
+    }
+
     pub fn snapshot(&self) -> DocumentSnapshot {
         DocumentSnapshot {
             document_id: self.id,
             file_name: self.file_name.clone(),
-            file_path: self.file_path.display().to_string(),
+            file_path: self.display_path(),
             title: self.title.clone(),
             base_url: self.base_url.clone(),
             word_count: self.word_count,
@@ -58,8 +84,8 @@ impl ActiveDocument {
             markdown: self.markdown.clone(),
             mode: self.mode,
             mode_label: self.mode.label(),
-            dirty: self.dirty,
-            save_status: if self.dirty { "Unsaved" } else { "Saved" },
+            dirty: self.needs_save(),
+            save_status: if self.needs_save() { "Unsaved" } else { "Saved" },
         }
     }
 
@@ -68,7 +94,7 @@ impl ActiveDocument {
             document_id: self.id,
             file_name: self.file_name.clone(),
             title: self.title.clone(),
-            dirty: self.dirty,
+            dirty: self.needs_save(),
             active,
             mode: self.mode,
         }
@@ -103,7 +129,11 @@ impl ActiveDocument {
     }
 
     pub fn is_dirty(&self) -> bool {
-        self.dirty
+        self.needs_save()
+    }
+
+    pub fn is_draft(&self) -> bool {
+        self.draft
     }
 
     pub fn suggested_pdf_export_path(&self) -> PathBuf {
@@ -139,6 +169,7 @@ impl ActiveDocument {
     }
 
     pub fn replace_file_path(&mut self, path: PathBuf, base_url: String) {
+        self.draft = false;
         self.file_name = file_name(&path).unwrap_or_else(|| "Untitled".to_string());
         self.canonical_path = std::fs::canonicalize(&path).unwrap_or_else(|_| path.clone());
         self.file_path = path;
@@ -147,7 +178,7 @@ impl ActiveDocument {
     }
 
     pub fn window_title(&self) -> String {
-        let dirty_marker = if self.dirty { " *" } else { "" };
+        let dirty_marker = if self.needs_save() { " *" } else { "" };
         format!("{}{} - MarkHola", self.file_name(), dirty_marker)
     }
 
@@ -161,6 +192,18 @@ impl ActiveDocument {
 
     fn refresh_html(&mut self) {
         self.html = markdown::render_html(&self.markdown);
+    }
+
+    fn needs_save(&self) -> bool {
+        self.draft || self.dirty
+    }
+
+    fn display_path(&self) -> String {
+        if self.draft {
+            "Unsaved draft".to_string()
+        } else {
+            self.file_path.display().to_string()
+        }
     }
 }
 
@@ -190,4 +233,11 @@ fn text_metrics(markdown: &str) -> (usize, usize) {
         markdown.split_whitespace().count(),
         markdown.lines().count(),
     )
+}
+
+fn file_io_base_url(path: &Path) -> String {
+    path.parent()
+        .and_then(|directory| url::Url::from_directory_path(directory).ok())
+        .map(|url| url.to_string())
+        .unwrap_or_default()
 }

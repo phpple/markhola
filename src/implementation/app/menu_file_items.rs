@@ -12,6 +12,7 @@ pub(super) fn action(
     target: &AnyObject,
 ) -> objc2::rc::Retained<NSMenuItem> {
     let item = match (title, key) {
+        ("New", "n") => item_with_key(mtm, "New", action, "n"),
         ("Open", "o") => item_with_key(mtm, "Open", action, "o"),
         ("Save", "s") => item_with_key(mtm, "Save", action, "s"),
         ("Save As", "S") => item_with_key(mtm, "Save As", action, "S"),
@@ -32,6 +33,14 @@ fn item_with_key(
     key: &str,
 ) -> objc2::rc::Retained<NSMenuItem> {
     match (title, key) {
+        ("New", "n") => unsafe {
+            NSMenuItem::initWithTitle_action_keyEquivalent(
+                NSMenuItem::alloc(mtm),
+                ns_string!("New"),
+                action,
+                ns_string!("n"),
+            )
+        },
         ("Open", "o") => unsafe {
             NSMenuItem::initWithTitle_action_keyEquivalent(
                 NSMenuItem::alloc(mtm),

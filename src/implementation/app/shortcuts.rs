@@ -5,6 +5,7 @@ use super::{UserEvent, dispatch_user_event, log_event, new_action_context};
 
 pub(super) fn handle_command_shortcut(proxy: &EventLoopProxy<UserEvent>, key: KeyCode) {
     match key {
+        KeyCode::KeyN => emit_shortcut(proxy, UserEvent::NewDocument, "Command+N"),
         KeyCode::KeyO => {
             let ctx = new_action_context("keyboard-command-o");
             log_event(
