@@ -23,6 +23,7 @@ pub(crate) fn app_shell_html() -> String {
             "__MATHJAX_RUNTIME__",
             &render_assets::mathjax_runtime_for_inline_script(),
         )
+        .replace("__APP_LOGO_DATA_URL__", render_assets::app_logo_data_url())
 }
 
 pub(crate) fn should_recover_shell_on_page_load(url: &str) -> bool {
