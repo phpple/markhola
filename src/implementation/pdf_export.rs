@@ -387,14 +387,47 @@ pub(crate) enum ExportPreparationMode {
 }
 
 #[derive(Deserialize)]
-struct ExportMeasurement {
-    width: f64,
-    height: f64,
+pub(crate) struct ExportMeasurement {
+    pub(crate) width: f64,
+    pub(crate) height: f64,
 }
 
-pub(crate) struct PreparedPrintWebView {
-    pub webview: Retained<WKWebView>,
-    pub preparation_mode: ExportPreparationMode,
+#[allow(dead_code)]
+pub(crate) fn render_document_pdf_data(document: &ActiveDocument) -> Result<Vec<u8>, String> {
+    let rendered_document_html = markdown::render_html(document.markdown());
+    let html = build_export_html(document, &rendered_document_html);
+    let preparation_mode = export_preparation_mode(&rendered_document_html);
+    let pdf_data = render_pdf_data(document, &html, preparation_mode)?;
+    apply_pdf_metadata(document, pdf_data)
+}
+
+pub(crate) fn prepare_printable_webview(
+    document: &ActiveDocument,
+) -> Result<Retained<WKWebView>, String> {
+    let (webview, _) = prepare_printable_webview_with_measurement(document)?;
+    Ok(webview)
+}
+
+pub(crate) fn prepare_printable_webview_with_measurement(
+    document: &ActiveDocument,
+) -> Result<(Retained<WKWebView>, ExportMeasurement), String> {
+    let started_at = Instant::now();
+    let rendered_document_html = markdown::render_html(document.markdown());
+    let html = build_export_html(document, &rendered_document_html);
+    let preparation_mode = export_preparation_mode(&rendered_document_html);
+    let webview = prepare_webview(document, &html, preparation_mode)?;
+    let measurement = measure_prepared_webview(&webview, preparation_mode, started_at)?;
+    log_event(
+        "pdf_export.prepare.printable",
+        None,
+        "prepared printable WKWebView",
+        format!("width={} height={}", measurement.width, measurement.height),
+    );
+    Ok((webview, measurement))
+}
+
+pub(crate) fn printable_page_count_for_height(height: f64) -> usize {
+    ((height.max(EXPORT_WEBVIEW_HEIGHT)) / EXPORT_WEBVIEW_HEIGHT).ceil() as usize
 }
 
 pub fn export_document(_window: &Window, document: &ActiveDocument) -> Result<PdfExportOutcome, String> {
@@ -494,21 +527,6 @@ fn write_export(
     Ok(())
 }
 
-pub(crate) fn prepare_print_webview(
-    _window: &Window,
-    document: &ActiveDocument,
-) -> Result<PreparedPrintWebView, String> {
-    let rendered_document_html = markdown::render_html(document.markdown());
-    let html = build_export_html(document, &rendered_document_html);
-    let preparation_mode = export_preparation_mode(&rendered_document_html);
-    let webview = prepare_webview(document, &html, preparation_mode)?;
-
-    Ok(PreparedPrintWebView {
-        webview,
-        preparation_mode,
-    })
-}
-
 pub(crate) fn apply_pdf_metadata(
     document: &ActiveDocument,
     pdf_data: Vec<u8>,
@@ -555,6 +573,7 @@ fn render_pdf_data(
     let pdf_configuration = unsafe { WKPDFConfiguration::new(mtm) };
     unsafe {
         pdf_configuration.setAllowTransparentBackground(false);
+        pdf_configuration.setRect(export_capture_rect(&measurement));
     }
 
     let pdf_data = create_pdf(
@@ -812,6 +831,16 @@ fn create_pdf(
         );
     }
     pdf
+}
+
+pub(crate) fn export_capture_rect(measurement: &ExportMeasurement) -> CGRect {
+    CGRect::new(
+        CGPoint::ZERO,
+        CGSize::new(
+            measurement.width.max(EXPORT_WEBVIEW_WIDTH),
+            measurement.height.max(EXPORT_WEBVIEW_HEIGHT),
+        ),
+    )
 }
 
 fn export_progress_snapshot(webview: &WKWebView, mtm: MainThreadMarker) -> Result<String, String> {

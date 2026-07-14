@@ -1,3 +1,4 @@
+use lopdf::Document as LoDocument;
 use tao::dpi::LogicalSize;
 use tao::event_loop::EventLoopBuilder;
 use tao::window::{Window, WindowBuilder};
@@ -5,7 +6,7 @@ use tao::window::{Window, WindowBuilder};
 use crate::app::log_event;
 use crate::document::ActiveDocument;
 use crate::file_io;
-use crate::pdf_export::prepare_print_webview;
+use crate::pdf_export::{export_markdown_file_to_path, prepare_print_webview};
 
 pub fn print_document(window: &Window, document: &ActiveDocument) -> Result<PrintOutcome, String> {
     log_event(
@@ -37,7 +38,6 @@ pub fn print_document(window: &Window, document: &ActiveDocument) -> Result<Prin
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PrintOutcome {
     Started,
-    Cancelled,
 }
 
 pub fn smoke_prepare_markdown_file_for_print(
@@ -69,4 +69,30 @@ pub fn smoke_prepare_markdown_file_for_print(
         ),
     );
     Ok(())
+}
+
+pub fn smoke_count_markdown_file_print_pages(input_path: &std::path::Path) -> Result<usize, String> {
+    let input_path = std::fs::canonicalize(input_path)
+        .map_err(|error| format!("Failed to canonicalize input path: {error}"))?;
+    let temp_pdf = std::env::temp_dir().join(format!(
+        "markhola-print-pages-{}.pdf",
+        std::process::id()
+    ));
+    if temp_pdf.exists() {
+        let _ = std::fs::remove_file(&temp_pdf);
+    }
+
+    export_markdown_file_to_path(&input_path, &temp_pdf)?;
+    let pdf =
+        LoDocument::load(&temp_pdf).map_err(|error| format!("Failed to read generated PDF: {error}"))?;
+    let _ = std::fs::remove_file(&temp_pdf);
+    let page_count = pdf.get_pages().len();
+
+    log_event(
+        "printing.smoke.pages",
+        None,
+        "counted Windows printable content pages for smoke validation",
+        format!("path={} pages={page_count}", input_path.display()),
+    );
+    Ok(page_count)
 }

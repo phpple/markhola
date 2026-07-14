@@ -62,3 +62,16 @@ fn reloading_from_disk_replaces_content_and_clears_dirty_state() {
     assert!(snapshot.html.contains("Reloaded"));
     assert!(!snapshot.dirty);
 }
+
+#[test]
+fn blank_document_starts_writable_and_unsaved() {
+    let document = ActiveDocument::new_blank_with_id(42);
+    let snapshot = document.snapshot();
+
+    assert_eq!(document.mode(), DocumentMode::Writable);
+    assert!(document.is_draft());
+    assert!(document.is_dirty());
+    assert_eq!(snapshot.file_name, "Untitled");
+    assert_eq!(snapshot.file_path, "Unsaved draft");
+    assert_eq!(snapshot.save_status, "Unsaved");
+}

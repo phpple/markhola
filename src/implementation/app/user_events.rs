@@ -3,7 +3,7 @@ use tao::event_loop::ControlFlow;
 use crate::document::DocumentMode;
 
 use super::close_actions::close_document_tab;
-use super::document_actions::{open_document, open_document_dialog};
+use super::document_actions::{create_blank_document, open_document, open_document_dialog};
 use super::export_actions;
 use super::navigation_actions::{
     activate_document, close_all_documents, close_current_document, close_other_documents,
@@ -21,6 +21,9 @@ pub(super) fn handle_user_event(
     control_flow: &mut ControlFlow,
 ) {
     match user_event {
+        UserEvent::NewDocument => {
+            create_blank_document(&runtime.window, &runtime.webview, &mut runtime.workspace);
+        }
         UserEvent::OpenFile(ctx) => handle_open_file(ctx, runtime),
         UserEvent::OpenPath(request) => handle_open_path(request, runtime),
         UserEvent::ActivateDocument(document_id) => activate_document(document_id, runtime),

@@ -3,6 +3,8 @@ use objc2::{MainThreadMarker, MainThreadOnly, sel};
 use objc2_app_kit::{NSEventModifierFlags, NSMenu, NSMenuItem};
 use objc2_foundation::ns_string;
 
+use super::menu_file_items::action;
+
 pub(super) fn add_edit_menu(mtm: MainThreadMarker, main_menu: &NSMenu, target: &AnyObject) {
     let edit_menu_item = unsafe {
         NSMenuItem::initWithTitle_action_keyEquivalent(
@@ -15,6 +17,15 @@ pub(super) fn add_edit_menu(mtm: MainThreadMarker, main_menu: &NSMenu, target: &
     main_menu.addItem(&edit_menu_item);
 
     let edit_menu = NSMenu::initWithTitle(NSMenu::alloc(mtm), ns_string!("Edit"));
+    edit_menu.addItem(&action(
+        mtm,
+        "Toggle Mode",
+        Some(sel!(toggleDocumentMode:)),
+        "/",
+        NSEventModifierFlags::Command,
+        target,
+    ));
+    edit_menu.addItem(&NSMenuItem::separatorItem(mtm));
     let undo_item = unsafe {
         NSMenuItem::initWithTitle_action_keyEquivalent(
             NSMenuItem::alloc(mtm),

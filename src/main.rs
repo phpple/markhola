@@ -43,6 +43,22 @@ fn main() {
         );
         return;
     }
+    if args.len() == 3 && args[1] == "--smoke-print-pages" {
+        let input = PathBuf::from(&args[2]);
+        match printing::smoke_count_markdown_file_print_pages(&input) {
+            Ok(page_count) => {
+                println!(
+                    "markhola smoke print page count succeeded: {} pages={page_count}",
+                    input.display()
+                );
+            }
+            Err(error) => {
+                eprintln!("markhola smoke print page count failed: {error}");
+                std::process::exit(1);
+            }
+        }
+        return;
+    }
     if args.len() == 4 && args[1] == "--smoke-export-html" {
         let input = PathBuf::from(&args[2]);
         let output = PathBuf::from(&args[3]);

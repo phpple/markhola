@@ -12,6 +12,7 @@ pub enum DocumentMode {
 #[derive(Clone, Debug)]
 pub struct ActiveDocument {
     pub(super) id: u64,
+    pub(super) draft: bool,
     pub(super) file_path: PathBuf,
     pub(super) canonical_path: PathBuf,
     pub(super) file_name: String,

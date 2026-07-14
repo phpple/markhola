@@ -21,6 +21,14 @@ pub(super) fn add_file_menu(mtm: MainThreadMarker, main_menu: &NSMenu, target: &
     let file_menu = NSMenu::initWithTitle(NSMenu::alloc(mtm), ns_string!("File"));
     file_menu.addItem(&action(
         mtm,
+        "New",
+        Some(sel!(newMenuDocument:)),
+        "n",
+        NSEventModifierFlags::Command,
+        target,
+    ));
+    file_menu.addItem(&action(
+        mtm,
         "Open",
         Some(sel!(openMenuDocument:)),
         "o",

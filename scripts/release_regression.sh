@@ -101,6 +101,15 @@ cargo run --release --bin markhola --manifest-path "$ROOT_DIR/Cargo.toml" -- --s
 cargo run --release --bin markhola --manifest-path "$ROOT_DIR/Cargo.toml" -- --smoke-print-prepare \
   "$ROOT_DIR/examples/mermaid.md"
 
+echo "==> Verifying Mermaid print preview page count"
+MERMAID_PRINT_PAGES_OUTPUT="$(cargo run --release --bin markhola --manifest-path "$ROOT_DIR/Cargo.toml" -- --smoke-print-pages \
+  "$ROOT_DIR/examples/mermaid.md")"
+echo "$MERMAID_PRINT_PAGES_OUTPUT"
+if [[ "$MERMAID_PRINT_PAGES_OUTPUT" != *"pages=6"* ]]; then
+  echo "Unexpected Mermaid print preview page count. Expected pages=6." >&2
+  exit 1
+fi
+
 if [[ "$WITH_PACKAGE" -eq 1 ]]; then
   echo "==> Packaging app bundle and DMG"
   run_packaging_with_retry

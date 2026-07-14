@@ -1,12 +1,14 @@
 use std::path::PathBuf;
+use std::process::Command;
 
 use crate::document::{ActiveDocument, suggested_pdf_export_path};
 use crate::markdown;
 use lopdf::{Dictionary, Document as LoDocument, Object, Stream};
 
 use super::implementation::{
-    APP_NAME, APP_VERSION, ExportPreparationMode, apply_pdf_metadata, build_export_html,
-    export_footer_text, export_preparation_mode,
+    APP_NAME, APP_VERSION, EXPORT_WEBVIEW_HEIGHT, EXPORT_WEBVIEW_WIDTH, ExportMeasurement,
+    ExportPreparationMode, apply_pdf_metadata, build_export_html, export_capture_rect,
+    export_footer_text, export_preparation_mode, printable_page_count_for_height,
 };
 
 fn document(path: &str, markdown: &str) -> ActiveDocument {
@@ -135,4 +137,66 @@ fn injects_pdf_metadata_with_markhola_version() {
         info.get(b"Producer").and_then(Object::as_str).ok(),
         Some(format!("{APP_NAME} v{APP_VERSION}").as_bytes())
     );
+}
+
+#[test]
+fn export_capture_rect_uses_full_measured_height() {
+    let rect = export_capture_rect(&ExportMeasurement {
+        width: EXPORT_WEBVIEW_WIDTH,
+        height: 4820.0,
+    });
+
+    assert_eq!(rect.size.width, EXPORT_WEBVIEW_WIDTH);
+    assert_eq!(rect.size.height, 4820.0);
+}
+
+#[test]
+fn export_capture_rect_respects_minimum_viewport_size() {
+    let rect = export_capture_rect(&ExportMeasurement {
+        width: 100.0,
+        height: 200.0,
+    });
+
+    assert_eq!(rect.size.width, EXPORT_WEBVIEW_WIDTH);
+    assert_eq!(rect.size.height, EXPORT_WEBVIEW_HEIGHT);
+}
+
+#[test]
+fn printable_page_count_rounds_up_for_partial_last_page() {
+    assert_eq!(printable_page_count_for_height(EXPORT_WEBVIEW_HEIGHT), 1);
+    assert_eq!(printable_page_count_for_height(EXPORT_WEBVIEW_HEIGHT + 1.0), 2);
+    assert_eq!(printable_page_count_for_height(6647.0), 6);
+}
+
+#[test]
+fn mermaid_example_print_preview_generates_expected_page_count() {
+    let root_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let example_path = root_dir.join("examples/mermaid.md");
+
+    let output = Command::new("cargo")
+        .arg("run")
+        .arg("--bin")
+        .arg("markhola")
+        .arg("--")
+        .arg("--smoke-print-pages")
+        .arg(&example_path)
+        .current_dir(&root_dir)
+        .output()
+        .expect("smoke print page-count command should start");
+
+    assert!(
+        output.status.success(),
+        "smoke print page-count failed\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let page_count = stdout
+        .split("pages=")
+        .nth(1)
+        .and_then(|value| value.trim().parse::<usize>().ok())
+        .expect("stdout should contain the computed print page count");
+
+    assert_eq!(page_count, 6, "examples/mermaid.md page count changed");
 }

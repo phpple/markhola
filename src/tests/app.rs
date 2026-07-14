@@ -72,6 +72,8 @@ fn app_shell_includes_find_panel_markup_and_handlers() {
     let html = app_shell_html();
 
     assert!(html.contains("id=\"findPanel\""));
+    assert!(html.contains("data:image/png;base64,"));
+    assert!(html.contains("<img class=\"about-logo\""));
     assert!(html.contains("window.openFindPanel = openFindPanel;"));
     assert!(html.contains("window.performEditCommand = performEditCommand;"));
     assert!(html.contains("className = \"find-match\""));
