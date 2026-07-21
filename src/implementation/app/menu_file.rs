@@ -55,6 +55,8 @@ pub(super) fn add_file_menu(mtm: MainThreadMarker, main_menu: &NSMenu, target: &
     remember_save_as(&save_as);
     file_menu.addItem(&save_as);
 
+    file_menu.addItem(&NSMenuItem::separatorItem(mtm));
+
     let print = action(
         mtm,
         "Print",
