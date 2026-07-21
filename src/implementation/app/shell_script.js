@@ -41,6 +41,7 @@
       const aboutBuild = document.getElementById("aboutBuild");
       const aboutGithub = document.getElementById("aboutGithub");
       const aboutCopy = document.getElementById("aboutCopy");
+      const appThemeStyle = document.getElementById("appThemeStyle");
       let mermaidInitialized = false;
       let mathJaxReadyPromise = null;
       let currentDocumentId = null;
@@ -255,6 +256,11 @@
           .replaceAll(">", "&gt;")
           .replaceAll('"', "&quot;")
           .replaceAll("'", "&#39;");
+
+      const applyAppTheme = (cssText) => {
+        if (!appThemeStyle) return;
+        appThemeStyle.textContent = cssText;
+      };
 
       const ensureMermaidInitialized = () => {
         if (mermaidInitialized || !window.mermaid) return;
@@ -1045,6 +1051,7 @@
       };
 
       window.openFindPanel = openFindPanel;
+      window.applyAppTheme = applyAppTheme;
 
       window.ipc.postMessage(JSON.stringify({ kind: "shell-ready" }));
     </script>

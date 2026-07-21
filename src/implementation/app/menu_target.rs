@@ -5,6 +5,7 @@ use objc2_foundation::{MainThreadMarker, NSObject, NSObjectProtocol};
 use tao::event_loop::EventLoopProxy;
 
 use crate::app::{UserEvent, dispatch_user_event, log_event, new_action_context};
+use crate::app::AppTheme;
 
 #[derive(Debug)]
 struct ProxyIvars {
@@ -50,6 +51,16 @@ unsafe impl NSObjectProtocol for MenuTarget {}
         fn open_find_panel(&self, _sender: Option<&AnyObject>) { emit(&self.ivars().proxy, UserEvent::OpenFind, "openFindPanel:"); }
         #[unsafe(method(toggleDocumentMode:))]
         fn toggle_document_mode(&self, _sender: Option<&AnyObject>) { emit(&self.ivars().proxy, UserEvent::ToggleMode, "toggleDocumentMode:"); }
+        #[unsafe(method(selectDefaultTheme:))]
+        fn select_default_theme(&self, _sender: Option<&AnyObject>) { emit(&self.ivars().proxy, UserEvent::SelectTheme(AppTheme::Default), "selectDefaultTheme:"); }
+        #[unsafe(method(selectGithubTheme:))]
+        fn select_github_theme(&self, _sender: Option<&AnyObject>) { emit(&self.ivars().proxy, UserEvent::SelectTheme(AppTheme::Github), "selectGithubTheme:"); }
+        #[unsafe(method(selectDarkTheme:))]
+        fn select_dark_theme(&self, _sender: Option<&AnyObject>) { emit(&self.ivars().proxy, UserEvent::SelectTheme(AppTheme::Dark), "selectDarkTheme:"); }
+        #[unsafe(method(selectLightTheme:))]
+        fn select_light_theme(&self, _sender: Option<&AnyObject>) { emit(&self.ivars().proxy, UserEvent::SelectTheme(AppTheme::Light), "selectLightTheme:"); }
+        #[unsafe(method(toggleFullscreenWindow:))]
+        fn toggle_fullscreen_window(&self, _sender: Option<&AnyObject>) { emit(&self.ivars().proxy, UserEvent::ToggleFullscreen, "toggleFullscreenWindow:"); }
         #[unsafe(method(closeCurrentDocument:))]
         fn close_current_document(&self, _sender: Option<&AnyObject>) { emit(&self.ivars().proxy, UserEvent::CloseCurrentDocument, "closeCurrentDocument:"); }
         #[unsafe(method(activateNextDocument:))]

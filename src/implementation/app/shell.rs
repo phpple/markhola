@@ -3,17 +3,18 @@ mod shell_script;
 
 use std::sync::atomic::{AtomicBool, Ordering};
 
+use crate::app::AppTheme;
 use crate::render_assets;
 
 use self::shell_markup::APP_SHELL_MARKUP;
 use self::shell_script::APP_SHELL_SCRIPT;
 
-pub(crate) fn app_shell_html() -> String {
+pub(crate) fn app_shell_html(theme: AppTheme) -> String {
     [APP_SHELL_MARKUP, APP_SHELL_SCRIPT]
         .join("")
         .replace(
             "__APP_THEME__",
-            &render_assets::load_app_theme_css_for_inline_style(),
+            &render_assets::load_app_theme_css_for_inline_style(theme.key()),
         )
         .replace(
             "__MERMAID_RUNTIME__",

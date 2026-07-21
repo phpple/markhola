@@ -1,6 +1,7 @@
 use tao::window::Window;
 use wry::WebView;
 
+use crate::app::AppTheme;
 use crate::workspace::DocumentWorkspace;
 
 use super::{
@@ -27,6 +28,11 @@ pub(super) fn present_workspace(
 pub(super) fn sync_native_menu_state(workspace: &DocumentWorkspace) {
     #[cfg(target_os = "macos")]
     macos_menu::set_document_output_enabled(workspace.active_document().is_some());
+}
+
+pub(super) fn sync_native_theme_state(theme: AppTheme) {
+    #[cfg(target_os = "macos")]
+    macos_menu::set_selected_theme(theme);
 }
 
 pub(super) fn sync_workspace_state(

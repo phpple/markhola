@@ -11,16 +11,7 @@ pub(super) fn action(
     modifiers: NSEventModifierFlags,
     target: &AnyObject,
 ) -> objc2::rc::Retained<NSMenuItem> {
-    let item = match (title, key) {
-        ("New", "n") => item_with_key(mtm, "New", action, "n"),
-        ("Open", "o") => item_with_key(mtm, "Open", action, "o"),
-        ("Save", "s") => item_with_key(mtm, "Save", action, "s"),
-        ("Save As", "S") => item_with_key(mtm, "Save As", action, "S"),
-        ("Print", "p") => item_with_key(mtm, "Print", action, "p"),
-        ("Toggle Mode", "/") => item_with_key(mtm, "Toggle Mode", action, "/"),
-        ("Close", "w") => item_with_key(mtm, "Close", action, "w"),
-        _ => item_with_key(mtm, "Exit", action, "q"),
-    };
+    let item = item_with_key(mtm, title, action, key);
     unsafe { item.setTarget(Some(target)) };
     item.setKeyEquivalentModifierMask(modifiers);
     item
@@ -92,9 +83,21 @@ fn item_with_key(
         _ => unsafe {
             NSMenuItem::initWithTitle_action_keyEquivalent(
                 NSMenuItem::alloc(mtm),
-                ns_string!("Exit"),
+                match title {
+                    "Exit" => ns_string!("Exit"),
+                    "Toggle Full Screen" => ns_string!("Toggle Full Screen"),
+                    "Default" => ns_string!("Default"),
+                    "GitHub" => ns_string!("GitHub"),
+                    "Dark" => ns_string!("Dark"),
+                    "Light" => ns_string!("Light"),
+                    _ => ns_string!(""),
+                },
                 action,
-                ns_string!("q"),
+                match key {
+                    "q" => ns_string!("q"),
+                    "f" => ns_string!("f"),
+                    _ => ns_string!(""),
+                },
             )
         },
     }

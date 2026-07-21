@@ -9,8 +9,8 @@ const DEFAULT_APP_THEME_LAYOUT_FILE: &str = "layout.css";
 const DEFAULT_APP_THEME_CSS: &str = include_str!("../../themes/default/layout.css");
 const DEFAULT_APP_LOGO_PNG: &[u8] = include_bytes!("../../assets/logo.png");
 
-pub fn load_app_theme_css() -> String {
-    for path in app_theme_candidates() {
+pub fn load_app_theme_css(theme_name: &str) -> String {
+    for path in app_theme_candidates(theme_name) {
         if let Ok(css) = read_to_string(&path) {
             return css;
         }
@@ -19,8 +19,8 @@ pub fn load_app_theme_css() -> String {
     DEFAULT_APP_THEME_CSS.to_string()
 }
 
-pub fn load_app_theme_css_for_inline_style() -> String {
-    load_app_theme_css().replace("</style", "<\\/style")
+pub fn load_app_theme_css_for_inline_style(theme_name: &str) -> String {
+    load_app_theme_css(theme_name).replace("</style", "<\\/style")
 }
 
 pub fn mermaid_runtime_for_inline_script() -> String {
@@ -42,14 +42,14 @@ pub fn app_logo_data_url() -> &'static str {
     })
 }
 
-fn app_theme_candidates() -> Vec<PathBuf> {
+fn app_theme_candidates(theme_name: &str) -> Vec<PathBuf> {
     let mut candidates = Vec::new();
 
     if let Ok(current_dir) = std::env::current_dir() {
         candidates.push(
             current_dir
                 .join("themes")
-                .join(DEFAULT_APP_THEME_NAME)
+                .join(theme_name)
                 .join(DEFAULT_APP_THEME_LAYOUT_FILE),
         );
     }
@@ -59,7 +59,7 @@ fn app_theme_candidates() -> Vec<PathBuf> {
             candidates.push(
                 executable_dir
                     .join("themes")
-                    .join(DEFAULT_APP_THEME_NAME)
+                    .join(theme_name)
                     .join(DEFAULT_APP_THEME_LAYOUT_FILE),
             );
         }
@@ -69,10 +69,14 @@ fn app_theme_candidates() -> Vec<PathBuf> {
                 contents_dir
                     .join("Resources")
                     .join("themes")
-                    .join(DEFAULT_APP_THEME_NAME)
+                    .join(theme_name)
                     .join(DEFAULT_APP_THEME_LAYOUT_FILE),
             );
         }
+    }
+
+    if theme_name != DEFAULT_APP_THEME_NAME {
+        candidates.extend(app_theme_candidates(DEFAULT_APP_THEME_NAME));
     }
 
     candidates.dedup();

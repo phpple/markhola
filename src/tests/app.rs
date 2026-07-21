@@ -3,6 +3,7 @@ use std::path::PathBuf;
 use std::sync::atomic::AtomicBool;
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use crate::app::AppTheme;
 use crate::workspace::DocumentWorkspace;
 
 use super::implementation::{load_document, reload_workspace_documents_from_disk};
@@ -69,13 +70,41 @@ fn suppresses_the_expected_blank_finish_once_before_recovering_again() {
 
 #[test]
 fn app_shell_includes_find_panel_markup_and_handlers() {
-    let html = app_shell_html();
+    let html = app_shell_html(AppTheme::Default);
 
     assert!(html.contains("id=\"findPanel\""));
     assert!(html.contains("data:image/png;base64,"));
     assert!(html.contains("<img class=\"about-logo\""));
     assert!(html.contains("window.openFindPanel = openFindPanel;"));
+    assert!(html.contains("window.applyAppTheme = applyAppTheme;"));
+    assert!(html.contains("id=\"appThemeStyle\""));
     assert!(html.contains("className = \"find-match\""));
     assert!(html.contains("replaceAllWritableMatches"));
     assert!(html.contains("event.key.toLowerCase() === \"f\""));
+}
+
+#[test]
+fn app_shell_uses_requested_theme_css() {
+    let html = app_shell_html(AppTheme::Github);
+
+    assert!(html.contains("#f6f8fa"));
+    assert!(html.contains("id=\"appThemeStyle\""));
+}
+
+#[test]
+fn app_theme_keys_and_labels_are_stable() {
+    let summary = AppTheme::ALL
+        .iter()
+        .map(|theme| (theme.key(), theme.label()))
+        .collect::<Vec<_>>();
+
+    assert_eq!(
+        summary,
+        vec![
+            ("default", "Default"),
+            ("github", "GitHub"),
+            ("dark", "Dark"),
+            ("light", "Light"),
+        ]
+    );
 }

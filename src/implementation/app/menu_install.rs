@@ -14,6 +14,7 @@ use super::menu_file::add_file_menu;
 use super::menu_help::add_help_menu;
 use super::menu_tab::add_tab_menu;
 use super::menu_target::target_ref;
+use super::menu_view::add_view_menu;
 
 pub fn install(proxy: &EventLoopProxy<UserEvent>) -> Result<(), Box<dyn Error>> {
     let mtm = MainThreadMarker::new().ok_or("menu setup must run on main thread")?;
@@ -25,6 +26,7 @@ pub fn install(proxy: &EventLoopProxy<UserEvent>) -> Result<(), Box<dyn Error>> 
     add_file_menu(mtm, &main_menu, target);
     add_edit_menu(mtm, &main_menu, target);
     add_tab_menu(mtm, &main_menu, target);
+    add_view_menu(mtm, &main_menu, target);
     add_help_menu(mtm, &main_menu, target);
 
     app.setMainMenu(Some(&main_menu));

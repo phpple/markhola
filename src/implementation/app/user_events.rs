@@ -1,6 +1,9 @@
 use tao::event_loop::ControlFlow;
+use tao::window::Fullscreen;
 
+use crate::app::AppTheme;
 use crate::document::DocumentMode;
+use crate::render_assets;
 
 use super::close_actions::close_document_tab;
 use super::document_actions::{create_blank_document, open_document, open_documents_dialog};
@@ -12,7 +15,9 @@ use super::navigation_actions::{
 use super::runtime::AppRuntime;
 use super::save_actions::{save_active_document, save_active_document_as};
 use super::shell_events::{handle_shell_ready, open_documentation, recover_shell};
-use super::workspace_view::{present_workspace, render_about, render_status, sync_workspace_state};
+use super::workspace_view::{
+    present_workspace, render_about, render_status, sync_native_theme_state, sync_workspace_state,
+};
 use super::{OpenPathRequest, UserEvent, log_event};
 
 pub(super) fn handle_user_event(
@@ -60,6 +65,8 @@ pub(super) fn handle_user_event(
             export_actions::open_find_panel(&runtime.webview, &runtime.workspace)
         }
         UserEvent::ToggleMode => toggle_mode(runtime),
+        UserEvent::SelectTheme(theme) => select_theme(theme, runtime),
+        UserEvent::ToggleFullscreen => toggle_fullscreen(runtime),
         UserEvent::EditorChanged(markdown) => editor_changed(markdown, runtime),
         UserEvent::ShowAbout => render_about(&runtime.webview),
         UserEvent::OpenDocumentation => open_documentation(runtime),
@@ -143,6 +150,50 @@ fn toggle_mode(runtime: &mut AppRuntime) {
         ),
         None => render_status(&runtime.webview, "No document opened.", "error"),
     }
+}
+
+fn select_theme(theme: AppTheme, runtime: &mut AppRuntime) {
+    runtime.selected_theme = theme;
+    sync_native_theme_state(theme);
+    let css = render_assets::load_app_theme_css_for_inline_style(theme.key());
+    match serde_json::to_string(&css) {
+        Ok(serialized_css) => {
+            let script = format!("window.applyAppTheme({serialized_css});");
+            if let Err(error) = runtime.webview.evaluate_script(&script) {
+                render_status(
+                    &runtime.webview,
+                    &format!("Failed to apply theme: {error}"),
+                    "error",
+                );
+                return;
+            }
+            render_status(
+                &runtime.webview,
+                &format!("Theme switched to {}.", theme.label()),
+                "info",
+            );
+        }
+        Err(error) => render_status(
+            &runtime.webview,
+            &format!("Failed to serialize theme CSS: {error}"),
+            "error",
+        ),
+    }
+}
+
+fn toggle_fullscreen(runtime: &mut AppRuntime) {
+    let next_state = if runtime.window.fullscreen().is_some() {
+        None
+    } else {
+        Some(Fullscreen::Borderless(None))
+    };
+    runtime.window.set_fullscreen(next_state);
+    let message = if runtime.window.fullscreen().is_some() {
+        "Entered fullscreen."
+    } else {
+        "Exited fullscreen."
+    };
+    render_status(&runtime.webview, message, "info");
 }
 
 fn editor_changed(markdown: String, runtime: &mut AppRuntime) {

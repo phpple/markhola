@@ -135,6 +135,16 @@ fn describe_user_event(
         UserEvent::PrintDocument => (None, "PrintDocument", format!("source={stage_source}")),
         UserEvent::OpenFind => (None, "OpenFind", format!("source={stage_source}")),
         UserEvent::ToggleMode => (None, "ToggleMode", format!("source={stage_source}")),
+        UserEvent::SelectTheme(theme) => (
+            None,
+            "SelectTheme",
+            format!("source={} theme={}", stage_source, theme.key()),
+        ),
+        UserEvent::ToggleFullscreen => (
+            None,
+            "ToggleFullscreen",
+            format!("source={stage_source}"),
+        ),
         UserEvent::EditorChanged(markdown) => (
             None,
             "EditorChanged",

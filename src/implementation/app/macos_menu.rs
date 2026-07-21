@@ -8,6 +8,7 @@ mod menu_install;
 mod menu_state;
 mod menu_tab;
 mod menu_target;
+mod menu_view;
 
 pub use self::menu_install::install;
-pub use self::menu_state::set_document_output_enabled;
+pub use self::menu_state::{set_document_output_enabled, set_selected_theme};

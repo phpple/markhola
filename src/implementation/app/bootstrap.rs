@@ -9,6 +9,8 @@ use url::Url;
 use wry::{PageLoadEvent, WebView, WebViewBuilder};
 use wry::http::{Response, header};
 
+use crate::app::AppTheme;
+
 use super::runtime::AppRuntime;
 use super::asset_access::{AssetAccessRegistry, new_registry, resolve_asset};
 use super::shell::{app_shell_html, should_dispatch_shell_recovery};
@@ -65,7 +67,7 @@ fn build_webview(
     let navigation_proxy = proxy.clone();
 
     WebViewBuilder::new()
-        .with_html(app_shell_html())
+        .with_html(app_shell_html(AppTheme::Default))
         .with_devtools(true)
         .with_custom_protocol("markhola-file".to_string(), move |_id, request| {
             let uri = request.uri().to_string();

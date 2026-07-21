@@ -2,6 +2,7 @@ use std::path::PathBuf;
 
 use serde::Serialize;
 
+use crate::app::AppTheme;
 use crate::document::{DocumentSnapshot, DocumentTabSnapshot};
 
 #[derive(Clone, Debug)]
@@ -26,6 +27,8 @@ pub(crate) enum UserEvent {
     PrintDocument,
     OpenFind,
     ToggleMode,
+    SelectTheme(AppTheme),
+    ToggleFullscreen,
     EditorChanged(String),
     ShowAbout,
     OpenDocumentation,

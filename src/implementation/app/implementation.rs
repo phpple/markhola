@@ -31,6 +31,7 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
 
     let (event_loop, mut runtime) = bootstrap::build_runtime()?;
     workspace_view::sync_native_menu_state(&runtime.workspace);
+    workspace_view::sync_native_theme_state(runtime.selected_theme);
 
     event_loop.run(move |event, _, control_flow| {
         event_loop::handle_event(event, &mut runtime, control_flow);

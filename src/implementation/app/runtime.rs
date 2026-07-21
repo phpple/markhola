@@ -6,6 +6,7 @@ use tao::keyboard::ModifiersState;
 use tao::window::Window;
 use wry::WebView;
 
+use crate::app::AppTheme;
 use crate::workspace::DocumentWorkspace;
 
 use super::{OpenPathRequest, UserEvent};
@@ -37,6 +38,7 @@ pub(super) struct AppRuntime {
     pub(super) modifiers: ModifiersState,
     pub(super) shell: ShellRuntime,
     pub(super) asset_access: AssetAccessRegistry,
+    pub(super) selected_theme: AppTheme,
 }
 
 impl AppRuntime {
@@ -55,6 +57,7 @@ impl AppRuntime {
             modifiers: ModifiersState::default(),
             shell: ShellRuntime::new(suppress_blank_recovery),
             asset_access,
+            selected_theme: AppTheme::Default,
         }
     }
 }

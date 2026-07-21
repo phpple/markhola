@@ -1,5 +1,7 @@
 #[path = "../implementation/app/implementation.rs"]
 mod implementation;
+#[path = "../implementation/app/app_theme.rs"]
+mod app_theme;
 #[path = "../implementation/app/interface.rs"]
 mod interface;
 #[cfg(target_os = "macos")]
@@ -12,4 +14,5 @@ mod shell;
 mod tests;
 
 pub use self::implementation::run;
+pub(crate) use self::app_theme::AppTheme;
 pub(crate) use self::interface::*;

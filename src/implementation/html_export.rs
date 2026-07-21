@@ -225,7 +225,7 @@ pub(crate) fn build_export_html(document: &ActiveDocument) -> String {
         .replace("__APP_VERSION__", APP_VERSION)
         .replace(
             "__APP_THEME__",
-            &render_assets::load_app_theme_css_for_inline_style(),
+            &render_assets::load_app_theme_css_for_inline_style("default"),
         )
         .replace("__EXPORT_CSS__", HTML_EXPORT_CSS)
         .replace(
