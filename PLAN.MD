@@ -85,6 +85,7 @@ This is another markdown reader and exporter software.Written by AI, free are th
 ### v0.7.5
 1. Support `[toc]`
 2. Enable to choose multiple markdown files while use "open file"
+3. Bug fix: Drag and drop open should render the same document view as "Open File" (not a single `<pre>` node).
 
 ### v1.0.0
 1. Two models: Readonly、writeonly.
