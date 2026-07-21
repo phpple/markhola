@@ -6,6 +6,7 @@ use crate::document::ActiveDocument;
 use crate::workspace::DocumentWorkspace;
 
 use super::PendingChangesAction;
+use super::asset_access::{AssetAccessRegistry, unregister_document};
 use super::save_actions::save_document;
 use super::workspace_view::{render_status, sync_workspace_state};
 
@@ -36,6 +37,7 @@ pub(super) fn close_document_tab(
     workspace: &mut DocumentWorkspace,
     document_id: u64,
     status: &str,
+    asset_access: &AssetAccessRegistry,
 ) -> bool {
     let Some(document) = workspace.document_by_id_mut(document_id) else {
         render_status(webview, "Document tab no longer exists.", "error");
@@ -45,6 +47,7 @@ pub(super) fn close_document_tab(
         return false;
     }
     workspace.close_document(document_id);
+    unregister_document(asset_access, document_id);
     sync_workspace_state(window, webview, workspace, status);
     true
 }
@@ -55,6 +58,7 @@ pub(super) fn close_document_tabs(
     workspace: &mut DocumentWorkspace,
     document_ids: &[u64],
     status: &str,
+    asset_access: &AssetAccessRegistry,
 ) -> bool {
     for document_id in document_ids {
         let Some(document) = workspace.document_by_id_mut(*document_id) else {
@@ -66,6 +70,7 @@ pub(super) fn close_document_tabs(
     }
     for document_id in document_ids {
         workspace.close_document(*document_id);
+        unregister_document(asset_access, *document_id);
     }
     sync_workspace_state(window, webview, workspace, status);
     true

@@ -69,6 +69,7 @@ pub(super) fn open_documentation(runtime: &mut AppRuntime) {
             &mut runtime.workspace,
             &path,
             None,
+            &runtime.asset_access,
         ),
         None => render_status(&runtime.webview, "Documentation file not found.", "error"),
     }

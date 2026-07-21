@@ -709,6 +709,7 @@
       };
 
       const finalizeReadonlyRender = async (documentId) => {
+        rewriteLocalAssetUrls(documentId);
         await renderReadonlyEnhancements();
         if (documentId !== currentDocumentId || currentDocumentMode !== "readonly") {
           return;
@@ -719,6 +720,50 @@
           refreshReadonlyFindResults();
         } else {
           resetReadonlyMatches(false);
+        }
+      };
+
+      const rewriteLocalAssetUrls = (documentId) => {
+        const baseHref = documentBase.getAttribute("href") || "";
+        window.ipc.postMessage(JSON.stringify({ kind: "debug-log", message: `rewriteLocalAssetUrls baseHref=${baseHref}` }));
+        if (!baseHref) return;
+
+        const images = content.querySelectorAll("img[src]");
+        for (const image of images) {
+          const src = image.getAttribute("src") || "";
+          if (!src) continue;
+          if (
+            src.startsWith("http://") ||
+            src.startsWith("https://") ||
+            src.startsWith("data:") ||
+            src.startsWith("blob:")
+          ) {
+            continue;
+          }
+
+          try {
+            const baseUrl = new URL(baseHref);
+            const fileUrl = new URL(src, baseUrl);
+            if (fileUrl.protocol === "file:") {
+              const basePath = baseUrl.pathname.endsWith("/") ? baseUrl.pathname : `${baseUrl.pathname}/`;
+              if (!fileUrl.pathname.startsWith(basePath)) {
+                image.setAttribute("src", `markhola-file://asset/${documentId}/`);
+                continue;
+              }
+              const relativePath = fileUrl.pathname.slice(basePath.length);
+              const rewritten = `markhola-file://asset/${documentId}/${relativePath}`;
+              image.setAttribute("src", rewritten);
+              image.setAttribute("data-original-src", src);
+              window.ipc.postMessage(
+                JSON.stringify({
+                  kind: "debug-log",
+                  message: `rewriteLocalAssetUrls src=${src} resolved=${resolved} rewritten=${rewritten}`
+                })
+              );
+            }
+          } catch {
+            // ignore
+          }
         }
       };
 
@@ -881,6 +926,18 @@
         if (!link) return;
 
         const href = link.getAttribute("href") || "";
+        if (href.startsWith("#")) {
+          const targetId = href.slice(1);
+          if (targetId) {
+            const target = document.getElementById(targetId);
+            if (target) {
+              event.preventDefault();
+              target.scrollIntoView({ block: "start", inline: "nearest" });
+              history.replaceState(null, "", href);
+              return;
+            }
+          }
+        }
         if (href.startsWith("http://") || href.startsWith("https://")) {
           event.preventDefault();
           window.ipc.postMessage(JSON.stringify({ kind: "open-external", href }));
@@ -893,9 +950,18 @@
           const target = event.target;
           if (!(target instanceof HTMLImageElement)) return;
 
+          window.ipc.postMessage(
+            JSON.stringify({
+              kind: "debug-log",
+              message: `image-error src=${target.getAttribute("src") || ""}`
+            })
+          );
+
           const fallback = document.createElement("p");
           fallback.className = "image-error";
-          fallback.textContent = `Image failed to load: ${target.getAttribute("src") || "unknown source"}`;
+          const originalSrc = target.getAttribute("data-original-src");
+          const visibleSrc = originalSrc || target.getAttribute("src") || "unknown source";
+          fallback.textContent = `Image failed to load: ${visibleSrc}`;
           target.replaceWith(fallback);
         },
         true

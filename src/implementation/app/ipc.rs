@@ -16,6 +16,11 @@ pub(super) fn handle_ipc_message(proxy: &EventLoopProxy<UserEvent>, payload: Str
     };
 
     match value.get("kind").and_then(Value::as_str) {
+        Some("debug-log") => {
+            if let Some(message) = value.get("message").and_then(Value::as_str) {
+                log_event("ipc.debug", None, "debug log", message);
+            }
+        }
         Some("open-file") => {
             let ctx = new_action_context("ipc-open-file");
             dispatch_user_event(proxy, "ipc", UserEvent::OpenFile(ctx));

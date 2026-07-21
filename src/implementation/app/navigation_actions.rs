@@ -46,6 +46,7 @@ pub(super) fn close_current_document(runtime: &mut AppRuntime, control_flow: &mu
             &mut runtime.workspace,
             document_id,
             "Document closed.",
+            &runtime.asset_access,
         );
     } else {
         *control_flow = ControlFlow::Exit;
@@ -63,7 +64,8 @@ pub(super) fn close_other_documents(runtime: &mut AppRuntime) {
                 &runtime.webview,
                 &mut runtime.workspace,
                 &document_ids,
-                "Other tabs closed.",
+            "Other tabs closed.",
+            &runtime.asset_access,
             );
         }
     } else {
@@ -82,6 +84,7 @@ pub(super) fn close_all_documents(runtime: &mut AppRuntime) {
             &mut runtime.workspace,
             &document_ids,
             "All tabs closed.",
+            &runtime.asset_access,
         );
     }
 }

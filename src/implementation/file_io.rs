@@ -114,5 +114,9 @@ pub fn directory_base_url(path: &Path) -> Result<String, String> {
         .ok_or_else(|| "Document path does not have a parent directory.".to_string())?;
     let url = Url::from_directory_path(directory)
         .map_err(|_| "Document directory cannot be converted to a file URL.".to_string())?;
-    Ok(url.to_string())
+    let mut base = url.to_string();
+    if !base.ends_with('/') {
+        base.push('/');
+    }
+    Ok(base)
 }

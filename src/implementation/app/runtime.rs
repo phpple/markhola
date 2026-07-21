@@ -9,6 +9,7 @@ use wry::WebView;
 use crate::workspace::DocumentWorkspace;
 
 use super::{OpenPathRequest, UserEvent};
+use super::asset_access::AssetAccessRegistry;
 
 pub(super) struct ShellRuntime {
     pub(super) ready: bool,
@@ -35,6 +36,7 @@ pub(super) struct AppRuntime {
     pub(super) workspace: DocumentWorkspace,
     pub(super) modifiers: ModifiersState,
     pub(super) shell: ShellRuntime,
+    pub(super) asset_access: AssetAccessRegistry,
 }
 
 impl AppRuntime {
@@ -43,6 +45,7 @@ impl AppRuntime {
         window: Window,
         webview: WebView,
         suppress_blank_recovery: Arc<AtomicBool>,
+        asset_access: AssetAccessRegistry,
     ) -> Self {
         Self {
             proxy,
@@ -51,6 +54,7 @@ impl AppRuntime {
             workspace: DocumentWorkspace::new(),
             modifiers: ModifiersState::default(),
             shell: ShellRuntime::new(suppress_blank_recovery),
+            asset_access,
         }
     }
 }

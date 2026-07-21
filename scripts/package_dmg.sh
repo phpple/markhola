@@ -147,7 +147,11 @@ build_app_bundle() {
     <key>LSSupportsOpeningDocumentsInPlace</key>
     <true/>
     <key>NSDocumentsFolderUsageDescription</key>
-    <string>MarkHola opens local Markdown documents for preview.</string>
+    <string>MarkHola needs access to your Documents folder to open Markdown files and load referenced local assets (images, diagrams) located alongside your documents.</string>
+    <key>NSDesktopFolderUsageDescription</key>
+    <string>MarkHola needs access to your Desktop folder to open Markdown files and load referenced local assets (images, diagrams) located alongside your documents.</string>
+    <key>NSDownloadsFolderUsageDescription</key>
+    <string>MarkHola needs access to your Downloads folder to open Markdown files and load referenced local assets (images, diagrams) located alongside your documents.</string>
     <key>NSHighResolutionCapable</key>
     <true/>
   </dict>

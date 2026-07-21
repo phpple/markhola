@@ -1,3 +1,4 @@
+mod asset_access;
 mod bootstrap;
 mod close_actions;
 mod document_actions;

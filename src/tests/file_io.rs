@@ -3,8 +3,8 @@ use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use super::{
-    ensure_supported_markdown_extension, ensure_supported_markdown_path, load_markdown,
-    save_markdown,
+    directory_base_url, ensure_supported_markdown_extension, ensure_supported_markdown_path,
+    load_markdown, save_markdown,
 };
 
 fn temp_file(name: &str, extension: &str) -> PathBuf {
@@ -88,4 +88,18 @@ fn save_as_allows_new_markdown_path() {
     let path = temp_file("save-as", "md");
 
     assert!(ensure_supported_markdown_extension(&path).is_ok());
+}
+
+#[test]
+fn directory_base_url_ends_with_trailing_slash() {
+    let path = temp_file("base-url", "md");
+    fs::write(&path, "# base").unwrap();
+
+    let base = directory_base_url(&path).unwrap();
+    assert!(
+        base.ends_with('/'),
+        "base url should end with '/': {base}"
+    );
+
+    let _ = fs::remove_file(&path);
 }

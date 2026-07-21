@@ -9,6 +9,7 @@ use crate::file_io;
 use crate::workspace::DocumentWorkspace;
 
 use super::workspace_view::{render_status, sync_workspace_state};
+use super::asset_access::{AssetAccessRegistry, register_document};
 
 pub(super) fn save_document(document: &mut ActiveDocument) -> Result<(), String> {
     if document.is_draft() {
@@ -23,13 +24,14 @@ pub(super) fn save_active_document(
     window: &Window,
     webview: &WebView,
     workspace: &mut DocumentWorkspace,
+    asset_access: &AssetAccessRegistry,
 ) -> bool {
     if workspace
         .active_document()
         .map(ActiveDocument::is_draft)
         .unwrap_or(false)
     {
-        return save_active_document_as(window, webview, workspace);
+        return save_active_document_as(window, webview, workspace, asset_access);
     }
 
     let Some(document) = workspace.active_document_mut() else {
@@ -48,6 +50,7 @@ pub(super) fn save_active_document_as(
     window: &Window,
     webview: &WebView,
     workspace: &mut DocumentWorkspace,
+    asset_access: &AssetAccessRegistry,
 ) -> bool {
     let Some(document) = workspace.active_document() else {
         render_status(webview, "No document to save.", "error");
@@ -82,6 +85,10 @@ pub(super) fn save_active_document_as(
         );
         return false;
     };
+    if let Err(error) = register_document(asset_access, snapshot.document_id, &path) {
+        render_status(webview, &format!("Failed to enable local assets: {error}"), "error");
+        return false;
+    }
     let Some(document) = workspace.active_document_mut() else {
         render_status(webview, "No document to save.", "error");
         return false;
