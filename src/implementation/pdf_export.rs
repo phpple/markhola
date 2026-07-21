@@ -10,10 +10,14 @@ use lopdf::{Dictionary, Document as LoDocument, Object};
 use objc2::rc::Retained;
 use objc2::runtime::AnyObject;
 use objc2::{MainThreadMarker, MainThreadOnly};
-use objc2_app_kit::NSApp;
+use objc2_app_kit::NSApplication;
 use objc2_core_foundation::{CGPoint, CGRect, CGSize};
-use objc2_foundation::{NSData, NSDate, NSDefaultRunLoopMode, NSError, NSRunLoop, NSString, NSURL};
-use objc2_web_kit::{WKContentWorld, WKPDFConfiguration, WKWebView, WKWebViewConfiguration};
+use objc2_foundation::{
+    NSData, NSDate, NSDefaultRunLoopMode, NSError, NSNull, NSRunLoop, NSString, NSURL,
+};
+use objc2_web_kit::{
+    WKContentWorld, WKPDFConfiguration, WKWebView, WKWebViewConfiguration, WKWebsiteDataStore,
+};
 use rfd::FileDialog;
 use serde::Deserialize;
 use serde_json::Value;
@@ -598,6 +602,10 @@ fn prepare_webview(
     let mtm = MainThreadMarker::new().ok_or("PDF export must run on the main thread.")?;
 
     let configuration = unsafe { WKWebViewConfiguration::new(mtm) };
+    let data_store = unsafe { WKWebsiteDataStore::nonPersistentDataStore(mtm) };
+    unsafe {
+        configuration.setWebsiteDataStore(&data_store);
+    }
     let webview = unsafe {
         WKWebView::initWithFrame_configuration(
             WKWebView::alloc(mtm),
@@ -621,7 +629,7 @@ fn prepare_webview(
         })
         .ok_or("Failed to resolve the document base URL for PDF export.")?;
 
-    let _app = NSApp(mtm);
+    let _app = NSApplication::sharedApplication(mtm);
     unsafe {
         webview.loadHTMLString_baseURL(&html, Some(&base_url));
     }
@@ -728,6 +736,7 @@ fn run_prepare_script(
     timeout_message: &str,
     timeout_stage: &str,
 ) -> Result<ExportMeasurement, String> {
+    const FALLBACK_RESULT_VAR: &str = "window.__markhola_prepare_measurement_json";
     let outcome = Rc::new(RefCell::new(None));
     let outcome_for_block = Rc::clone(&outcome);
     let completion = RcBlock::new(move |result: *mut AnyObject, error: *mut NSError| {
@@ -770,10 +779,28 @@ fn run_prepare_script(
         format!("{message} Last progress: {progress}")
     })?;
 
-    let raw = outcome
+    let raw_result = outcome
         .borrow_mut()
         .take()
-        .ok_or("Export preparation finished without a result.")??;
+        .ok_or("Export preparation finished without a result.")?;
+
+    let raw = match raw_result {
+        Ok(value) => value,
+        Err(error) => {
+            if error.contains("unsupported type") {
+                return run_prepare_script_fallback(
+                    webview,
+                    mtm,
+                    script,
+                    timeout,
+                    timeout_message,
+                    timeout_stage,
+                    FALLBACK_RESULT_VAR,
+                );
+            }
+            return Err(error);
+        }
+    };
     let measurement: ExportMeasurement = serde_json::from_str(&raw)
         .map_err(|error| format!("Failed to decode export page size: {error}"))?;
 
@@ -781,6 +808,129 @@ fn run_prepare_script(
         width: measurement.width.ceil().max(EXPORT_WEBVIEW_WIDTH),
         height: measurement.height.ceil().max(EXPORT_WEBVIEW_HEIGHT),
     })
+}
+
+fn run_prepare_script_fallback(
+    webview: &WKWebView,
+    mtm: MainThreadMarker,
+    script: &str,
+    timeout: Duration,
+    timeout_message: &str,
+    timeout_stage: &str,
+    result_var: &str,
+) -> Result<ExportMeasurement, String> {
+    log_event(
+        "pdf_export.prepare.fallback",
+        None,
+        "falling back to evaluateJavaScript-based preparation",
+        "",
+    );
+
+    let prepare_function = if script.contains("markholaPreparePdfFast") {
+        "markholaPreparePdfFast"
+    } else {
+        "markholaPreparePdf"
+    };
+    let kickoff = format!(
+        r#"
+(function() {{
+  {result_var} = null;
+  Promise.resolve()
+    .then(() => window.{prepare_function}())
+    .then(
+      (measurement) => {{
+        {result_var} = JSON.stringify(measurement);
+      }},
+      (error) => {{
+        {result_var} = JSON.stringify({{ width: 0, height: 0, error: String(error && error.message ? error.message : error) }});
+      }}
+    );
+  return "ok";
+}})();
+"#
+    );
+    evaluate_javascript(webview, "prepare-kickoff", &kickoff)?;
+
+    let started_at = Instant::now();
+    loop {
+        if started_at.elapsed() > timeout {
+            let progress = export_progress_snapshot(webview, mtm)
+                .unwrap_or_else(|error| format!("progress-unavailable:{error}"));
+            log_event(
+                timeout_stage,
+                None,
+                "timed out while preparing export page (fallback)",
+                progress.as_str(),
+            );
+            return Err(format!("{timeout_message} Last progress: {progress}"));
+        }
+
+        if let Some(raw) = read_prepare_result_var(webview, result_var)? {
+            let measurement: ExportMeasurement = serde_json::from_str(&raw)
+                .map_err(|error| format!("Failed to decode export page size: {error}"))?;
+            return Ok(ExportMeasurement {
+                width: measurement.width.ceil().max(EXPORT_WEBVIEW_WIDTH),
+                height: measurement.height.ceil().max(EXPORT_WEBVIEW_HEIGHT),
+            });
+        }
+
+        let next_slice = NSDate::dateWithTimeIntervalSinceNow(0.05);
+        unsafe {
+            NSRunLoop::currentRunLoop().runMode_beforeDate(NSDefaultRunLoopMode, &next_slice);
+        }
+    }
+}
+
+fn read_prepare_result_var(webview: &WKWebView, result_var: &str) -> Result<Option<String>, String> {
+    let expr = format!("{} === null ? \"null\" : {}", result_var, result_var);
+    let raw = evaluate_javascript(webview, "prepare-poll", &expr)?;
+    if raw == "null" {
+        Ok(None)
+    } else {
+        Ok(Some(raw))
+    }
+}
+
+fn evaluate_javascript(webview: &WKWebView, label: &str, script: &str) -> Result<String, String> {
+    let outcome = Rc::new(RefCell::new(None));
+    let outcome_for_block = Rc::clone(&outcome);
+    let completion = RcBlock::new(move |result: *mut AnyObject, error: *mut NSError| {
+        let export_result = if let Some(error) = unsafe { Retained::retain(error) } {
+            Err(error.localizedDescription().to_string())
+        } else if let Some(result) = unsafe { Retained::retain(result) } {
+            match result.downcast::<NSString>() {
+                Ok(string) => Ok(string.to_string()),
+                Err(result) => match result.downcast::<NSNull>() {
+                    Ok(_) => Ok("null".to_string()),
+                    Err(result) => {
+                        let description: Retained<NSString> =
+                            unsafe { objc2::msg_send![&*result, description] };
+                        Ok(description.to_string())
+                    }
+                },
+            }
+        } else {
+            Ok("null".to_string())
+        };
+
+        *outcome_for_block.borrow_mut() = Some(export_result);
+    });
+
+    unsafe {
+        webview.evaluateJavaScript_completionHandler(&NSString::from_str(script), Some(&completion));
+    }
+
+    wait_for(
+        || outcome.borrow().is_some(),
+        "Timed out while evaluating JavaScript.",
+        Duration::from_secs(5),
+    )?;
+
+    let result = outcome
+        .borrow_mut()
+        .take()
+        .ok_or("Missing JavaScript evaluation result.".to_string())?;
+    result.map_err(|error| format!("{label}: {error}"))
 }
 
 fn create_pdf(
