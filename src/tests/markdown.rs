@@ -152,3 +152,22 @@ fn example_math_keeps_math_render_containers() {
     assert!(html.contains("class=\"math math-display\""));
     assert!(html.contains("class=\"math-block\""));
 }
+
+#[test]
+fn renders_toc_when_placeholder_present() {
+    let markdown = "# Title\n\n[toc]\n\n## Section A\n\n### Subsection";
+    let html = render_html(markdown);
+
+    assert!(html.contains("class=\"toc\""));
+    assert!(html.contains("href=\"#title\""));
+    assert!(html.contains("href=\"#section-a\""));
+    assert!(html.contains("href=\"#subsection\""));
+}
+
+#[test]
+fn does_not_render_toc_without_placeholder() {
+    let markdown = "# Title\n\n## Section";
+    let html = render_html(markdown);
+
+    assert!(!html.contains("class=\"toc\""));
+}

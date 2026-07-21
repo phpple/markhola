@@ -1,26 +1,58 @@
 use std::sync::OnceLock;
 
-use pulldown_cmark::{CodeBlockKind, Event, Options, Parser, Tag, TagEnd, html};
+use pulldown_cmark::{CodeBlockKind, Event, HeadingLevel, Options, Parser, Tag, TagEnd, html};
 use syntect::easy::HighlightLines;
 use syntect::highlighting::{Theme, ThemeSet};
 use syntect::html::{IncludeBackground, styled_line_to_highlighted_html};
 use syntect::parsing::{SyntaxReference, SyntaxSet};
 use syntect::util::LinesWithEndings;
 
+const TOC_PLACEHOLDER: &str = "<markhola-toc></markhola-toc>";
+
 pub fn render_html(markdown: &str) -> String {
+    let (markdown, has_toc_placeholder) = preprocess_toc(markdown);
+
     let mut options = Options::empty();
     options.insert(Options::ENABLE_TABLES);
     options.insert(Options::ENABLE_STRIKETHROUGH);
     options.insert(Options::ENABLE_TASKLISTS);
     options.insert(Options::ENABLE_MATH);
 
-    let parser = Parser::new_ext(markdown, options);
+    let parser = Parser::new_ext(&markdown, options);
     let mut html_output = String::new();
     let mut regular_events = Vec::new();
     let mut events = parser.into_iter();
+    let mut headings = Vec::new();
+    let mut used_heading_ids = std::collections::HashMap::<String, usize>::new();
 
     while let Some(event) = events.next() {
         match event {
+            Event::Start(Tag::Heading { level, .. }) => {
+                push_regular_html(&mut html_output, &mut regular_events);
+
+                let mut heading_events: Vec<Event<'_>> = Vec::new();
+                for next_event in events.by_ref() {
+                    match next_event {
+                        Event::End(TagEnd::Heading(_)) => break,
+                        other => heading_events.push(other),
+                    }
+                }
+
+                let heading_text = heading_plain_text(&heading_events);
+                let heading_id = unique_heading_id(
+                    &mut used_heading_ids,
+                    &slugify_heading(&heading_text),
+                );
+                headings.push(TocHeading {
+                    level,
+                    id: heading_id.clone(),
+                    text: heading_text,
+                });
+
+                let mut inline_html = String::new();
+                html::push_html(&mut inline_html, heading_events.into_iter());
+                html_output.push_str(&render_heading(level, &heading_id, &inline_html));
+            }
             Event::Start(Tag::CodeBlock(kind)) => {
                 push_regular_html(&mut html_output, &mut regular_events);
 
@@ -46,7 +78,13 @@ pub fn render_html(markdown: &str) -> String {
     }
 
     push_regular_html(&mut html_output, &mut regular_events);
-    html_output
+
+    if has_toc_placeholder {
+        let toc_html = render_toc(&headings);
+        html_output.replace(TOC_PLACEHOLDER, &toc_html)
+    } else {
+        html_output
+    }
 }
 
 pub fn extract_title(markdown: &str) -> Option<String> {
@@ -116,6 +154,125 @@ fn render_code_block(language: Option<String>, source: &str) -> String {
     format!(
         "<div class=\"code-block\"{language_attribute}>{badge}<div class=\"code-block__body\"><div class=\"code-block__line-numbers\" aria-hidden=\"true\">{line_numbers}</div><pre class=\"code-block__pre\"><code class=\"code-block__code\">{}</code></pre></div></div>",
         highlight.lines_html.join("")
+    )
+}
+
+#[derive(Clone, Debug)]
+struct TocHeading {
+    level: HeadingLevel,
+    id: String,
+    text: String,
+}
+
+fn preprocess_toc(markdown: &str) -> (String, bool) {
+    let mut has_toc = false;
+    let mut output = String::with_capacity(markdown.len());
+    let mut first = true;
+
+    for line in markdown.lines() {
+        if !first {
+            output.push('\n');
+        }
+        first = false;
+
+        if is_toc_line(line) {
+            has_toc = true;
+            output.push_str(TOC_PLACEHOLDER);
+        } else {
+            output.push_str(line);
+        }
+    }
+
+    if markdown.ends_with('\n') {
+        output.push('\n');
+    }
+
+    (output, has_toc)
+}
+
+fn is_toc_line(line: &str) -> bool {
+    line.trim().eq_ignore_ascii_case("[toc]")
+}
+
+fn heading_plain_text(events: &[Event<'_>]) -> String {
+    let mut output = String::new();
+    for event in events {
+        match event {
+            Event::Text(value) | Event::Code(value) => output.push_str(value),
+            Event::SoftBreak | Event::HardBreak => output.push(' '),
+            _ => {}
+        }
+    }
+    output.trim().to_string()
+}
+
+fn slugify_heading(value: &str) -> String {
+    let mut slug = String::new();
+    let mut last_was_dash = false;
+
+    for character in value.chars() {
+        let lower = character.to_ascii_lowercase();
+        if lower.is_ascii_alphanumeric() {
+            slug.push(lower);
+            last_was_dash = false;
+            continue;
+        }
+
+        if lower.is_whitespace() || lower == '-' {
+            if !slug.is_empty() && !last_was_dash {
+                slug.push('-');
+                last_was_dash = true;
+            }
+        }
+    }
+
+    while slug.ends_with('-') {
+        slug.pop();
+    }
+
+    if slug.is_empty() {
+        "section".to_string()
+    } else {
+        slug
+    }
+}
+
+fn unique_heading_id(
+    used: &mut std::collections::HashMap<String, usize>,
+    base: &str,
+) -> String {
+    let count = used.entry(base.to_string()).or_insert(0);
+    *count += 1;
+    if *count == 1 {
+        base.to_string()
+    } else {
+        format!("{base}-{}", *count)
+    }
+}
+
+fn render_heading(level: HeadingLevel, id: &str, inline_html: &str) -> String {
+    let level_number = level as u8;
+    format!(
+        "<h{level_number} id=\"{}\">{}</h{level_number}>",
+        escape_html_attribute(id),
+        inline_html
+    )
+}
+
+fn render_toc(headings: &[TocHeading]) -> String {
+    let mut items = String::new();
+    for heading in headings {
+        let level = heading.level as u8;
+        let indent = (level.saturating_sub(1) as usize) * 12;
+        items.push_str(&format!(
+            "<li class=\"toc__item toc__item--h{level}\" style=\"margin-left: {indent}px;\"><a class=\"toc__link\" href=\"#{}\">{}</a></li>",
+            escape_html_attribute(&heading.id),
+            escape_html(&heading.text)
+        ));
+    }
+
+    format!(
+        "<nav class=\"toc\" aria-label=\"Table of contents\"><ul class=\"toc__list\">{items}</ul></nav>"
     )
 }
 
