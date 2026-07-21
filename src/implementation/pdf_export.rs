@@ -819,6 +819,9 @@ fn run_prepare_script_fallback(
     timeout_stage: &str,
     result_var: &str,
 ) -> Result<ExportMeasurement, String> {
+    const FALLBACK_PENDING_TITLE: &str = "__MARKHOLA_PENDING__";
+    const FALLBACK_RESULT_TITLE_PREFIX: &str = "__MARKHOLA_RESULT__";
+
     log_event(
         "pdf_export.prepare.fallback",
         None,
@@ -834,22 +837,25 @@ fn run_prepare_script_fallback(
     let kickoff = format!(
         r#"
 (function() {{
+  document.title = "{FALLBACK_PENDING_TITLE}";
   {result_var} = null;
   Promise.resolve()
     .then(() => window.{prepare_function}())
     .then(
       (measurement) => {{
         {result_var} = JSON.stringify(measurement);
+        document.title = "{FALLBACK_RESULT_TITLE_PREFIX}" + {result_var};
       }},
       (error) => {{
         {result_var} = JSON.stringify({{ width: 0, height: 0, error: String(error && error.message ? error.message : error) }});
+        document.title = "{FALLBACK_RESULT_TITLE_PREFIX}" + {result_var};
       }}
     );
   return "ok";
 }})();
 "#
     );
-    evaluate_javascript(webview, "prepare-kickoff", &kickoff)?;
+    evaluate_javascript_allowing_unsupported_type(webview, "prepare-kickoff", &kickoff)?;
 
     let started_at = Instant::now();
     loop {
@@ -865,7 +871,11 @@ fn run_prepare_script_fallback(
             return Err(format!("{timeout_message} Last progress: {progress}"));
         }
 
-        if let Some(raw) = read_prepare_result_var(webview, result_var)? {
+        if let Some(raw) = read_prepare_result_title(
+            webview,
+            FALLBACK_PENDING_TITLE,
+            FALLBACK_RESULT_TITLE_PREFIX,
+        )? {
             let measurement: ExportMeasurement = serde_json::from_str(&raw)
                 .map_err(|error| format!("Failed to decode export page size: {error}"))?;
             return Ok(ExportMeasurement {
@@ -881,14 +891,24 @@ fn run_prepare_script_fallback(
     }
 }
 
-fn read_prepare_result_var(webview: &WKWebView, result_var: &str) -> Result<Option<String>, String> {
-    let expr = format!("{} === null ? \"null\" : {}", result_var, result_var);
-    let raw = evaluate_javascript(webview, "prepare-poll", &expr)?;
-    if raw == "null" {
-        Ok(None)
-    } else {
-        Ok(Some(raw))
+fn read_prepare_result_title(
+    webview: &WKWebView,
+    pending_title: &str,
+    result_prefix: &str,
+) -> Result<Option<String>, String> {
+    let title = unsafe { webview.title() }
+        .map(|value| value.to_string())
+        .unwrap_or_default();
+
+    if title.is_empty() || title == pending_title {
+        return Ok(None);
     }
+
+    if let Some(raw) = title.strip_prefix(result_prefix) {
+        return Ok(Some(raw.to_string()));
+    }
+
+    Err(format!("prepare-poll: unexpected fallback title state: {title}"))
 }
 
 fn evaluate_javascript(webview: &WKWebView, label: &str, script: &str) -> Result<String, String> {
@@ -931,6 +951,18 @@ fn evaluate_javascript(webview: &WKWebView, label: &str, script: &str) -> Result
         .take()
         .ok_or("Missing JavaScript evaluation result.".to_string())?;
     result.map_err(|error| format!("{label}: {error}"))
+}
+
+fn evaluate_javascript_allowing_unsupported_type(
+    webview: &WKWebView,
+    label: &str,
+    script: &str,
+) -> Result<String, String> {
+    match evaluate_javascript(webview, label, script) {
+        Ok(result) => Ok(result),
+        Err(error) if error.contains("unsupported type") => Ok("null".to_string()),
+        Err(error) => Err(error),
+    }
 }
 
 fn create_pdf(
@@ -1102,7 +1134,7 @@ pub(crate) fn build_export_html(document: &ActiveDocument, rendered_html: &str) 
         .replace("__EXPORT_FOOTER__", &export_footer_text())
         .replace(
             "__APP_THEME__",
-            &render_assets::load_app_theme_css_for_inline_style(),
+            &render_assets::load_app_theme_css_for_inline_style("default"),
         )
         .replace("__EXPORT_PRINT_CSS__", EXPORT_PRINT_CSS)
         .replace(

@@ -86,7 +86,13 @@ When implementing a new feature or a user-requested change in this repository, f
 14. When a fix is user-visible and needs manual verification (e.g. drag/drop, menus, webview navigation/rendering), include rebuilding `dist/MarkHola.app` via `scripts/build_app.sh` as a required step before declaring the work done.
 15. When the user explicitly says `提交xxx版本`, split the implementation history by small feature first, and keep each user-visible feature in its own English one-sentence commit whenever practical.
 16. After the feature commits, place documentation, packaging, validation, or release-summary adjustments in later commits instead of folding them back into the feature commits unless they are inseparable from a specific feature.
-17. Use the final release commit for that version as the tag target, and create a Git tag named `v版本号`.
+17. Before uploading or publishing a GitHub release, run sandbox validation against the exact DMG candidate that will be released. The sandbox flow must at minimum verify opening a Markdown file, editing it, saving it, and checking the target release feature in the packaged app.
+18. Only publish the GitHub release after the sandbox validation passes. If validation fails, do not upload or publish the DMG.
+19. Use the final release commit for that version as the tag target, and create a Git tag named `v版本号`.
+20. During release validation, do not assume the active `MarkHola` window belongs to the latest build when multiple local app copies exist. First verify the actual process path or startup log of the running app.
+21. If `/Applications/MarkHola.app` or another local copy may conflict with the candidate artifact, isolate or stop the conflicting app before validating the DMG candidate.
+22. When the UI result conflicts with runtime logs, treat that as a release-validation blocker and resolve the target-artifact mismatch before continuing.
+23. Keep a short validation record for each release that includes the candidate DMG path, copied validation app path, tested process path, and the key runtime evidence used to prove the correct artifact was validated.
 
 For version tracking:
 

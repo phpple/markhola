@@ -87,6 +87,20 @@ This is another markdown reader and exporter software.Written by AI, free are th
 2. Enable to choose multiple markdown files while use "open file"
 3. Bug fix: Drag and drop open should render the same document view as "Open File" (not a single `<pre>` node).
 
+### v0.7.6
+1. Improve app shell theme support
+   - Keep the current warm `default` theme
+   - Add a GitHub-style `github` theme
+   - Add a clean `light` theme
+   - Add a `dark` theme
+2. Add a `View` menu before `Help`
+   - Add `View > Theme`
+   - Allow choosing `default`, `github`, `dark`, and `light`
+   - Apply the selected theme immediately in the running app
+3. Add a full-screen document view action in the `View` menu
+   - Allow toggling fullscreen from the menu
+   - Keep document reading and editing usable after entering fullscreen
+
 ### v1.0.0
 1. Two models: Readonly、writeonly.
 2. Readonly:Default mode, you can open any markdown file.

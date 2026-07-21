@@ -2,7 +2,7 @@
 
 ![Application logo](../logo.png)
 
-Current version: `v0.7.5`
+Current version: `v0.7.6`
 
 ## What is MarkHola
 
@@ -20,6 +20,8 @@ MarkHola is a lightweight desktop Markdown reader and editor for macOS.
 - Export the current document to HTML
 - Print the current document
 - Open multiple Markdown files in one window
+- Switch app shell themes from the View menu
+- Toggle fullscreen viewing from the View menu
 - Open the built-in documentation from the Help menu
 - Use `Command + F` to find text in readonly mode
 - Use `Command + F` to find and replace text in writable mode
@@ -52,6 +54,14 @@ MarkHola is a lightweight desktop Markdown reader and editor for macOS.
 - Close Tab
 - Close Other Tabs
 - Close All Tabs
+
+### View
+
+- Theme > Default
+- Theme > GitHub
+- Theme > Dark
+- Theme > Light
+- Toggle Full Screen
 
 ### Help
 

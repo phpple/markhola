@@ -6,7 +6,7 @@ MarkHola is a lightweight desktop Markdown reader and editor built with Rust for
 
 ## Current Version
 
-- `v0.7.5`
+- `v0.7.6`
 
 ## Features
 
@@ -17,7 +17,8 @@ MarkHola is a lightweight desktop Markdown reader and editor built with Rust for
 - Export the current document to PDF from `File > Export > PDF`
 - Export the current document to HTML from `File > Export > HTML`
 - Print the current document from `File > Print`
-- Load the app shell theme from an editable `themes/default/layout.css` file
+- Switch app shell themes from `View > Theme > Default / GitHub / Dark / Light`
+- Load the app shell themes from editable files under `themes/<theme>/layout.css`
 - Save the current document with `Command + S`
 - Save a new unsaved document by choosing a path on first save
 - Save the current document to another path with `File > Save As`
@@ -40,6 +41,7 @@ MarkHola is a lightweight desktop Markdown reader and editor built with Rust for
   - `Tab / Shift + Tab` indent and outdent, including multi-line selections
 - `Command + W` close the current document tab
 - Drag and drop files into the window
+- Toggle fullscreen document viewing from `View > Toggle Full Screen`
 - Open Markdown files from Finder on macOS
 - Open external links in the default browser
 - macOS app bundle and DMG packaging
@@ -94,6 +96,12 @@ Run release regression checks with packaging:
 ./scripts/release_regression.sh --with-package
 ```
 
+Use the full release publish workflow before uploading a GitHub release:
+
+```bash
+open scripts/release_publish_workflow.md
+```
+
 Build the app:
 
 ```bash
@@ -106,6 +114,13 @@ Create the macOS app bundle and DMG:
 ./scripts/package_dmg.sh
 ```
 
+Release order for GitHub publishing:
+
+1. `./scripts/release_regression.sh --with-package`
+2. sandbox-validate the exact DMG candidate
+3. create the GitHub release draft and upload that validated DMG
+4. publish the release only after the sandbox checks pass
+
 ## Project Structure
 
 - `src/`: desktop app source code
@@ -113,6 +128,7 @@ Create the macOS app bundle and DMG:
 - `assets/`: logo and icon sources
 - `examples/`: sample Markdown files for manual verification
 - `scripts/`: packaging scripts
+- `scripts/release_publish_workflow.md`: pre-publish sandbox validation and GitHub release workflow
 - `themes/`: directly editable app theme files
 - `assets/help/`: bundled in-app help markdown files
 

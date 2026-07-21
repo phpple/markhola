@@ -12,6 +12,12 @@ Run this extended command when packaging a release candidate:
 ./scripts/release_regression.sh --with-package
 ```
 
+Before publishing a GitHub release, complete the sandbox validation flow in:
+
+```bash
+scripts/release_publish_workflow.md
+```
+
 ## Manual checks
 
 1. Empty launch close behavior
@@ -76,10 +82,42 @@ Run this extended command when packaging a release candidate:
    Expected: the `Tab` menu can switch tabs, close the current tab, close other tabs, and close all tabs.
 
 14. Theme resource regression
-   Expected: `themes/default/layout.css` changes are reflected by the app.
+   Open `examples/theme-showcase.md`.
+   Expected: `View` appears before `Help`.
+   Expected: `View > Theme` exposes `Default`, `GitHub`, `Dark`, and `Light`.
+   Expected: switching themes updates the running app immediately in readonly mode.
+   Expected: switching themes updates the running app immediately in writable mode.
    Expected: packaged app contains `Contents/Resources/themes/default/layout.css`.
+   Expected: packaged app contains `Contents/Resources/themes/github/layout.css`.
+   Expected: packaged app contains `Contents/Resources/themes/dark/layout.css`.
+   Expected: packaged app contains `Contents/Resources/themes/light/layout.css`.
    Expected: packaged app contains `Contents/Resources/help/Documentation.md`.
 
 15. Inspect regression
    Right click in the preview area.
    Expected: the context menu still exposes `Inspect`.
+
+16. Fullscreen regression
+   Open `examples/theme-showcase.md`.
+   Expected: `View > Toggle Full Screen` enters fullscreen.
+   Expected: `View > Toggle Full Screen` exits fullscreen.
+   Expected: the current document remains open and usable before, during, and after fullscreen.
+
+## Pre-publish sandbox verification
+
+Use the exact DMG candidate that will be uploaded to GitHub.
+
+1. Mount the release DMG and launch the copied `MarkHola.app`
+   Expected: the packaged app starts normally inside the sandboxed macOS environment.
+
+2. Open a Markdown file through `File > Open`
+   Expected: the packaged app can open a Markdown file without relying on local dev binaries.
+
+3. Switch to writable mode, edit the file, and save it
+   Expected: the window enters writable mode, accepts edits, and persists them to disk.
+
+4. Return to readonly mode and verify rendered output
+   Expected: the preview reflects the saved content from the packaged app.
+
+5. Verify the target release feature in the packaged app
+   Expected: the headline feature for the version works in the sandbox before the DMG is uploaded or the GitHub release is published.
