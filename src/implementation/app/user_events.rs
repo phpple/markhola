@@ -3,7 +3,7 @@ use tao::event_loop::ControlFlow;
 use crate::document::DocumentMode;
 
 use super::close_actions::close_document_tab;
-use super::document_actions::{create_blank_document, open_document, open_document_dialog};
+use super::document_actions::{create_blank_document, open_document, open_documents_dialog};
 use super::export_actions;
 use super::navigation_actions::{
     activate_document, close_all_documents, close_current_document, close_other_documents,
@@ -36,6 +36,7 @@ pub(super) fn handle_user_event(
                 &mut runtime.workspace,
                 document_id,
                 "Document closed.",
+                &runtime.asset_access,
             );
         }
         UserEvent::CloseCurrentDocument => close_current_document(runtime, control_flow),
@@ -45,10 +46,10 @@ pub(super) fn handle_user_event(
         UserEvent::RecoverShell(url) => recover_shell(url, runtime),
         UserEvent::OpenExternal(href) => open_external_link(&href, runtime),
         UserEvent::SaveDocument => {
-            save_active_document(&runtime.window, &runtime.webview, &mut runtime.workspace);
+            save_active_document(&runtime.window, &runtime.webview, &mut runtime.workspace, &runtime.asset_access);
         }
         UserEvent::SaveDocumentAs => {
-            save_active_document_as(&runtime.window, &runtime.webview, &mut runtime.workspace);
+            save_active_document_as(&runtime.window, &runtime.webview, &mut runtime.workspace, &runtime.asset_access);
         }
         UserEvent::ExportPdf => export_actions::export_pdf(&runtime.webview, &runtime.workspace),
         UserEvent::ExportHtml => export_actions::export_html(&runtime.webview, &runtime.workspace),
@@ -73,14 +74,28 @@ fn handle_open_file(ctx: super::ActionContext, runtime: &mut AppRuntime) {
         "handling UserEvent::OpenFile",
         format!("source={}", ctx.source),
     );
-    match open_document_dialog(ctx.event_id) {
-        Some(path) => open_document(
-            &runtime.window,
-            &runtime.webview,
-            &mut runtime.workspace,
-            &path,
-            Some(ctx.event_id),
-        ),
+    match open_documents_dialog(ctx.event_id) {
+        Some(paths) => {
+            let mut failures = 0usize;
+            for path in paths {
+                let before_active = runtime.workspace.active_document_id();
+                open_document(
+                    &runtime.window,
+                    &runtime.webview,
+                    &mut runtime.workspace,
+                    &path,
+                    Some(ctx.event_id),
+                    &runtime.asset_access,
+                );
+                let after_active = runtime.workspace.active_document_id();
+                if after_active == before_active && runtime.workspace.find_by_path(&path).is_none() {
+                    failures += 1;
+                }
+            }
+            if failures > 0 {
+                render_status(&runtime.webview, "Some files failed to open.", "error");
+            }
+        }
         None => render_status(&runtime.webview, "Open cancelled.", "info"),
     }
 }
@@ -106,6 +121,7 @@ fn handle_open_path(request: OpenPathRequest, runtime: &mut AppRuntime) {
         &mut runtime.workspace,
         &path,
         Some(ctx.event_id),
+        &runtime.asset_access,
     );
 }
 

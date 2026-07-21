@@ -10,9 +10,10 @@ use crate::file_io;
 use crate::workspace::{DocumentWorkspace, WorkspaceOpenResult};
 
 use super::log_event;
+use super::asset_access::{AssetAccessRegistry, register_document};
 use super::workspace_view::{present_workspace, render_status, sync_workspace_state};
 
-pub(super) fn open_document_dialog(event_id: u64) -> Option<PathBuf> {
+pub(super) fn open_documents_dialog(event_id: u64) -> Option<Vec<PathBuf>> {
     let started_at = SystemTime::now();
     log_event(
         "file_dialog.begin",
@@ -23,7 +24,7 @@ pub(super) fn open_document_dialog(event_id: u64) -> Option<PathBuf> {
     let result = FileDialog::new()
         .add_filter("Markdown", &["md", "markdown"])
         .set_title("Open Markdown File")
-        .pick_file();
+        .pick_files();
     let elapsed_ms = started_at
         .elapsed()
         .map(|duration| duration.as_millis())
@@ -53,6 +54,7 @@ pub(super) fn open_document(
     workspace: &mut DocumentWorkspace,
     path: &PathBuf,
     event_id: Option<u64>,
+    asset_access: &AssetAccessRegistry,
 ) {
     log_event(
         "open_document.begin",
@@ -74,7 +76,7 @@ pub(super) fn open_document(
     }
 
     match load_document(workspace.next_document_id(), path) {
-        Ok(document) => open_loaded_document(window, webview, workspace, path, event_id, document),
+        Ok(document) => open_loaded_document(window, webview, workspace, path, event_id, document, asset_access),
         Err(message) => {
             log_event(
                 "open_document.end",
@@ -143,6 +145,7 @@ fn open_loaded_document(
     path: &Path,
     event_id: Option<u64>,
     document: ActiveDocument,
+    asset_access: &AssetAccessRegistry,
 ) {
     log_event(
         "open_document.end",
@@ -151,7 +154,12 @@ fn open_loaded_document(
         format!("path={}", path.display()),
     );
     match workspace.open_document(document) {
-        WorkspaceOpenResult::OpenedNew(_) => {
+        WorkspaceOpenResult::OpenedNew(document_id) => {
+            if let Err(error) = register_document(asset_access, document_id, path) {
+                workspace.close_document(document_id);
+                render_status(webview, &format!("Failed to enable local assets: {error}"), "error");
+                return;
+            }
             present_workspace(window, webview, workspace, "Document loaded.", true)
         }
         WorkspaceOpenResult::ActivatedExisting(_) => sync_workspace_state(
