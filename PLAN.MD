@@ -101,6 +101,18 @@ This is another markdown reader and exporter software.Written by AI, free are th
    - Allow toggling fullscreen from the menu
    - Keep document reading and editing usable after entering fullscreen
 
+### v0.7.7
+1. Update the logo assets and unify the product branding UI
+2. Continue to add more features into `v0.7.7`
+3. Fix drag-and-drop opening for multiple Markdown files
+   - Dragging 2 or more Markdown files into the app should open all files
+   - Each dropped file should appear in its own tab
+4. Refine the empty workspace UI
+   - Reduce the bottom status bar height when no file is open
+5. Move the footer status bar out of the WebView
+   - Make the footer a native macOS window component
+   - Keep the Markdown reading and editing area inside the WebView
+
 ### v1.0.0
 1. Two models: Readonly、writeonly.
 2. Readonly:Default mode, you can open any markdown file.
