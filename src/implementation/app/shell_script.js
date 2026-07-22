@@ -214,6 +214,7 @@
       };
 
       const resetWorkspaceChrome = (statusMessage) => {
+        document.body.classList.add("workspace-empty");
         document.title = "MarkHola";
         documentTitle.textContent = "Preview";
         documentSubtitle.textContent = "Use File > Open, Command+O, or drag a Markdown file into the window.";
@@ -236,6 +237,7 @@
           return;
         }
 
+        document.body.classList.remove("workspace-empty");
         document.title = `${active.file_name}${active.dirty ? " *" : ""} - MarkHola`;
         documentTitle.textContent = active.title;
         documentSubtitle.textContent = active.file_name;

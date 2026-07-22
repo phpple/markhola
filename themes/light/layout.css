@@ -342,12 +342,23 @@ body {
   text-align: center;
 }
 
+body.workspace-empty .empty-state {
+  min-height: 100%;
+  padding: 28px 20px;
+}
+
 .empty-card {
   max-width: 440px;
   padding: 32px;
   border-radius: 22px;
   background: rgba(255, 255, 255, 0.96);
   border: 1px solid rgba(92, 74, 52, 0.1);
+}
+
+body.workspace-empty .empty-card {
+  max-width: 520px;
+  padding: 24px 28px;
+  border-radius: 18px;
 }
 
 .empty-card h2 {
@@ -368,6 +379,20 @@ body {
   backdrop-filter: blur(14px);
   font-size: 12px;
   color: var(--muted);
+}
+
+body.workspace-empty .bottom-bar {
+  grid-template-columns: minmax(0, 1fr);
+  gap: 8px;
+  padding: 8px 14px;
+  border-radius: 12px;
+  font-size: 11px;
+}
+
+body.workspace-empty #wordCount,
+body.workspace-empty #lineCount,
+body.workspace-empty #modeState {
+  display: none;
 }
 
 .bottom-item {
