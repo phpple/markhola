@@ -31,7 +31,7 @@ require_command() {
 render_icon() {
   local size="$1"
   local output="$2"
-  sips -z "$size" "$size" "$ROOT_DIR/assets/logo.png" --out "$output" >/dev/null
+  sips -z "$size" "$size" "$ROOT_DIR/assets/app-icon.png" --out "$output" >/dev/null
 }
 
 build_app_bundle() {

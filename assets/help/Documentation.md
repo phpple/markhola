@@ -2,7 +2,7 @@
 
 ![Application logo](../logo.png)
 
-Current version: `v0.7.6`
+Current version: `v0.7.7`
 
 ## What is MarkHola
 

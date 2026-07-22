@@ -1,16 +1,19 @@
-<svg width="1024" height="1024" viewBox="0 0 1024 1024" fill="none" xmlns="http://www.w3.org/2000/svg">
-  <rect width="1024" height="1024" rx="248" fill="url(#bg)"/>
-  <rect x="62" y="62" width="900" height="900" rx="214" fill="#FFF9F0" fill-opacity="0.96"/>
-
-  <path d="M226 708V258H296L430 474L564 258H634V708H559V395L451 576H409L301 395V708H226Z" fill="#FF8A00"/>
-  <path d="M386 565H638V641H386V565Z" fill="#35D67C"/>
-  <circle cx="512" cy="603" r="138" stroke="#35D67C" stroke-width="34" stroke-dasharray="26 32"/>
-
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title desc">
+  <title id="title">MarkHola icon</title>
+  <desc id="desc">A fast, friendly markdown reader represented by a document, the letters M and H, and an AI sparkle.</desc>
   <defs>
-    <linearGradient id="bg" x1="85" y1="48" x2="947" y2="953" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#FFE9CA"/>
-      <stop offset="0.55" stop-color="#FFF6E9"/>
-      <stop offset="1" stop-color="#D9F9E7"/>
-    </linearGradient>
+    <linearGradient id="surface" x1="116" y1="82" x2="912" y2="943" gradientUnits="userSpaceOnUse"><stop stop-color="#F4F8FF"/><stop offset="1" stop-color="#E8FFF7"/></linearGradient>
+    <linearGradient id="m-gradient" x1="0" y1="0" x2="0" y2="1"><stop stop-color="#8A7BFF"/><stop offset="1" stop-color="#5847D5"/></linearGradient>
+    <linearGradient id="h-gradient" x1="0" y1="0" x2="0" y2="1"><stop stop-color="#38D9AF"/><stop offset="1" stop-color="#0AA783"/></linearGradient>
+    <filter id="shadow" x="111" y="117" width="802" height="829" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB"><feDropShadow dx="0" dy="24" stdDeviation="22" flood-color="#334B7B" flood-opacity=".15"/></filter>
   </defs>
+  <g transform="translate(-128 -128) scale(1.25)">
+  <g filter="url(#shadow)"><path d="M259 192C216 192 181 227 181 270V754C181 797 216 832 259 832H765C808 832 843 797 843 754V399L636 192H259Z" fill="white"/><path d="M636 192V331C636 369 667 399 705 399H843L636 192Z" fill="#DDE7FF"/></g>
+  <g transform="translate(-45 0)">
+    <path d="M284 692V379C284 363 297 350 313 350H350C360 350 369 355 375 364L449 483L523 364C529 355 538 350 548 350H585C601 350 614 363 614 379V692H544V489L479 593C473 603 464 609 452 609H446C434 609 425 603 419 593L354 489V692H284Z" fill="url(#m-gradient)"/>
+    <rect x="579" y="350" width="10" height="342" fill="white"/>
+    <path d="M589 350H614V477H760V350H830V692H760V538H614V692H589V350Z" fill="url(#h-gradient)"/>
+  </g>
+  <path d="M249 737H464" stroke="#B7C6E6" stroke-width="18" stroke-linecap="round"/><path d="M249 778H401" stroke="#D7E0F2" stroke-width="18" stroke-linecap="round"/><path d="M750 224L762 257L795 269L762 281L750 314L738 281L705 269L738 257L750 224Z" fill="#FFB62E"/>
+  </g>
 </svg>

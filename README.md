@@ -6,7 +6,7 @@ MarkHola is a lightweight desktop Markdown reader and editor built with Rust for
 
 ## Current Version
 
-- `v0.7.6`
+- `v0.7.7`
 
 ## Features
 
@@ -40,7 +40,7 @@ MarkHola is a lightweight desktop Markdown reader and editor built with Rust for
   - `Ctrl + A / E` move to line start and line end
   - `Tab / Shift + Tab` indent and outdent, including multi-line selections
 - `Command + W` close the current document tab
-- Drag and drop files into the window
+- Drag and drop one or more Markdown files into the window
 - Toggle fullscreen document viewing from `View > Toggle Full Screen`
 - Open Markdown files from Finder on macOS
 - Open external links in the default browser
