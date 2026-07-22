@@ -17,6 +17,8 @@ mod workspace_view;
 
 #[allow(unused_imports)]
 pub(crate) use self::document_actions::{load_document, reload_workspace_documents_from_disk};
+#[allow(unused_imports)]
+pub(crate) use self::event_loop::file_paths_from_urls;
 
 use super::*;
 

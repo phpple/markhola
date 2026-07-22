@@ -2,11 +2,12 @@ use std::fs;
 use std::path::PathBuf;
 use std::sync::atomic::AtomicBool;
 use std::time::{SystemTime, UNIX_EPOCH};
+use url::Url;
 
 use crate::app::AppTheme;
 use crate::workspace::DocumentWorkspace;
 
-use super::implementation::{load_document, reload_workspace_documents_from_disk};
+use super::implementation::{file_paths_from_urls, load_document, reload_workspace_documents_from_disk};
 use super::shell::{
     app_shell_html, should_dispatch_shell_recovery, should_recover_shell_on_page_load,
 };
@@ -107,4 +108,32 @@ fn app_theme_keys_and_labels_are_stable() {
             ("light", "Light"),
         ]
     );
+}
+
+#[test]
+fn file_paths_from_urls_keeps_all_file_paths_in_order() {
+    let paths = file_paths_from_urls(vec![
+        Url::parse("file:///tmp/one.md").unwrap(),
+        Url::parse("file:///tmp/two.md").unwrap(),
+        Url::parse("file:///tmp/three.md").unwrap(),
+    ]);
+
+    assert_eq!(
+        paths,
+        vec![
+            PathBuf::from("/tmp/one.md"),
+            PathBuf::from("/tmp/two.md"),
+            PathBuf::from("/tmp/three.md"),
+        ]
+    );
+}
+
+#[test]
+fn file_paths_from_urls_ignores_non_file_urls() {
+    let paths = file_paths_from_urls(vec![
+        Url::parse("https://example.com/demo.md").unwrap(),
+        Url::parse("file:///tmp/real.md").unwrap(),
+    ]);
+
+    assert_eq!(paths, vec![PathBuf::from("/tmp/real.md")]);
 }

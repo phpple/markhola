@@ -1,5 +1,6 @@
 use tao::event::{Event, StartCause};
 use tao::event_loop::ControlFlow;
+use url::Url;
 
 use super::runtime::AppRuntime;
 use super::window_events::handle_window_event;
@@ -38,35 +39,49 @@ fn handle_opened_urls(urls: Vec<url::Url>, runtime: &mut AppRuntime) {
         "received Event::Opened",
         format!("urls={urls:?}"),
     );
-    if let Some(url) = urls.into_iter().find(|url| url.scheme() == "file") {
-        match url.to_file_path() {
-            Ok(path) => {
-                let ctx = super::new_action_context("tao-opened");
-                log_event(
-                    "tao.opened.path",
-                    Some(ctx.event_id),
-                    "resolved file path from Event::Opened",
-                    format!("path={}", path.display()),
-                );
-                super::dispatch_user_event(
-                    &runtime.proxy,
-                    "tao-opened",
-                    UserEvent::OpenPath(super::OpenPathRequest { ctx, path }),
-                );
-            }
-            Err(_) => {
-                log_event(
-                    "tao.opened.error",
-                    None,
-                    "failed to convert Event::Opened URL to file path",
-                    "",
-                );
-                render_status(
-                    &runtime.webview,
-                    "The requested file path is not valid.",
-                    "error",
-                );
-            }
+    let paths = file_paths_from_urls(urls);
+    if paths.is_empty() {
+        log_event(
+            "tao.opened.error",
+            None,
+            "no valid file paths resolved from Event::Opened",
+            "",
+        );
+        render_status(
+            &runtime.webview,
+            "The requested file path is not valid.",
+            "error",
+        );
+        return;
+    }
+
+    for path in paths {
+        let ctx = super::new_action_context("tao-opened");
+        log_event(
+            "tao.opened.path",
+            Some(ctx.event_id),
+            "resolved file path from Event::Opened",
+            format!("path={}", path.display()),
+        );
+        super::dispatch_user_event(
+            &runtime.proxy,
+            "tao-opened",
+            UserEvent::OpenPath(super::OpenPathRequest { ctx, path }),
+        );
+    }
+}
+
+pub(crate) fn file_paths_from_urls(urls: Vec<Url>) -> Vec<std::path::PathBuf> {
+    let mut paths = Vec::new();
+
+    for url in urls {
+        if url.scheme() != "file" {
+            continue;
+        }
+        if let Ok(path) = url.to_file_path() {
+            paths.push(path);
         }
     }
+
+    paths
 }
