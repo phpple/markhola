@@ -10,10 +10,12 @@ encoding_rs = "=0.8.35"
 icns = { version = "=0.4.0", default-features = false, features = ["pngio"] }
 lopdf = "=0.35.0"
 objc2 = "=0.6.4"
-objc2-app-kit = { version = "=0.3.2", features = ["NSApplication", "NSBox", "NSColor", "NSControl", "NSDocumentController", "NSEvent", "NSFont", "NSMenu", "NSMenuItem", "NSPrintInfo", "NSPrintOperation", "NSResponder", "NSTextField", "NSView", "NSWindow"] }
+objc2-app-kit = { version = "=0.3.2", features = ["NSApplication", "NSColor", "NSControl", "NSDocumentController", "NSEvent", "NSFont", "NSMenu", "NSMenuItem", "NSPrintInfo", "NSPrintOperation", "NSResponder", "NSTextField", "NSView", "NSWindow", "objc2-quartz-core"] }
 objc2-core-foundation = { version = "=0.3.2", features = ["CFCGTypes", "objc2"] }
+objc2-core-graphics = { version = "=0.3.2", default-features = false, features = ["CGColor"] }
 objc2-foundation = { version = "=0.3.2", features = ["NSData", "NSDate", "NSError", "NSRunLoop", "NSString", "NSURL", "NSUserDefaults"] }
 objc2-pdf-kit = "=0.3.2"
+objc2-quartz-core = { version = "=0.3.2", default-features = false, features = ["CALayer", "objc2-core-graphics"] }
 objc2-web-kit = { version = "=0.3.2", features = ["WKContentWorld", "WKFrameInfo", "WKNavigation", "WKPDFConfiguration", "WKWebView", "WKWebViewConfiguration", "block2", "objc2-app-kit"] }
 open = "=5.3.6"
 pulldown-cmark = { version = "=0.13.4", default-features = false, features = ["html"] }

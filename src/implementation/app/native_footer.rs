@@ -16,7 +16,7 @@ use objc2::runtime::AnyObject;
 use objc2::msg_send;
 #[cfg(target_os = "macos")]
 use objc2_app_kit::{
-    NSAutoresizingMaskOptions, NSBox, NSBoxType, NSColor, NSFont, NSTextField, NSWindow,
+    NSAutoresizingMaskOptions, NSColor, NSFont, NSTextField, NSView, NSWindow,
 };
 #[cfg(target_os = "macos")]
 use objc2_foundation::{NSPoint, NSRect, NSSize, NSString};
@@ -42,7 +42,7 @@ pub(super) struct NativeFooter {
 
 #[cfg(target_os = "macos")]
 struct NativeFooterHandle {
-    footer_view: Retained<NSBox>,
+    footer_view: Retained<NSView>,
     path_field: Retained<NSTextField>,
     words_field: Retained<NSTextField>,
     lines_field: Retained<NSTextField>,
@@ -62,12 +62,11 @@ impl NativeFooter {
                 return Self { handle: None };
             };
 
-            let footer_view = NSBox::initWithFrame(
-                NSBox::alloc(mtm),
+            let footer_view = NSView::initWithFrame(
+                NSView::alloc(mtm),
                 NSRect::new(NSPoint::new(0.0, 0.0), NSSize::new(100.0, FOOTER_HEIGHT)),
             );
-            footer_view.setBoxType(NSBoxType::Custom);
-            footer_view.setBorderWidth(0.0);
+            footer_view.setWantsLayer(true);
             footer_view.setAutoresizingMask(
                 NSAutoresizingMaskOptions::ViewWidthSizable
                     | NSAutoresizingMaskOptions::ViewMaxYMargin,
@@ -125,7 +124,9 @@ impl NativeFooter {
                 return;
             };
             let (background, primary, secondary) = footer_theme_colors(theme);
-            handle.footer_view.setFillColor(&background);
+            if let Some(layer) = handle.footer_view.layer() {
+                layer.setBackgroundColor(Some(&background.CGColor()));
+            }
             handle.path_field.setTextColor(Some(&secondary));
             handle.words_field.setTextColor(Some(&primary));
             handle.lines_field.setTextColor(Some(&primary));

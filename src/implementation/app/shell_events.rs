@@ -8,6 +8,8 @@ use super::{UserEvent, dispatch_user_event, log_event};
 pub(super) fn handle_shell_ready(runtime: &mut AppRuntime) {
     let shell_was_ready = runtime.shell.ready;
     runtime.shell.ready = true;
+    runtime.native_footer.set_theme(runtime.selected_theme);
+    runtime.native_footer.sync(&runtime.workspace, "Ready.");
 
     if (shell_was_ready || runtime.shell.recovery_pending)
         && runtime.workspace.active_document().is_some()

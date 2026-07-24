@@ -71,7 +71,6 @@ pub(super) fn build_runtime() -> Result<(EventLoop<UserEvent>, AppRuntime), Box<
         native_footer,
         selected_theme,
     );
-    runtime.native_footer.sync(&runtime.workspace, "Ready.");
     Ok((event_loop, runtime))
 }
 
