@@ -6,7 +6,7 @@ use tao::dpi::LogicalSize;
 use tao::event_loop::{EventLoop, EventLoopBuilder, EventLoopProxy};
 use tao::window::WindowBuilder;
 use url::Url;
-use wry::{PageLoadEvent, WebView, WebViewBuilder};
+use wry::{DragDropEvent, PageLoadEvent, WebView, WebViewBuilder};
 use wry::http::{Response, header};
 
 use crate::app::AppTheme;
@@ -84,10 +84,43 @@ fn build_webview(
     let ipc_proxy = proxy.clone();
     let page_load_proxy = proxy.clone();
     let navigation_proxy = proxy.clone();
+    let drag_drop_proxy = proxy.clone();
 
     WebViewBuilder::new()
         .with_html(app_shell_html(selected_theme))
         .with_devtools(true)
+        .with_drag_drop_handler(move |event| {
+            match event {
+                DragDropEvent::Enter { paths, .. } => {
+                    log_event(
+                        "webview.drag_drop.enter",
+                        None,
+                        "files entered webview",
+                        format!("paths={paths:?}"),
+                    );
+                }
+                DragDropEvent::Drop { paths, .. } => {
+                    log_event(
+                        "webview.drag_drop.drop",
+                        None,
+                        "files dropped on webview",
+                        format!("paths={paths:?}"),
+                    );
+                    for path in paths {
+                        let ctx = super::new_action_context("webview-drop");
+                        dispatch_user_event(
+                            &drag_drop_proxy,
+                            "webview-drop",
+                            UserEvent::OpenPath(super::OpenPathRequest { ctx, path }),
+                        );
+                    }
+                }
+                DragDropEvent::Leave | DragDropEvent::Over { .. } => {}
+                _ => {}
+            }
+
+            true
+        })
         .with_custom_protocol("markhola-file".to_string(), move |_id, request| {
             let uri = request.uri().to_string();
             log_event(
