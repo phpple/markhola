@@ -8,20 +8,23 @@ use super::{
     APP_AUTHOR, APP_BUILD_PLATFORM, APP_BUILD_TARGET, APP_GITHUB_URL, APP_VERSION, StatusPayload,
     WINDOW_TITLE, WorkspacePresentation, macos_menu,
 };
+use super::native_footer::NativeFooter;
 
 pub(super) fn present_workspace(
     window: &Window,
     webview: &WebView,
+    native_footer: &NativeFooter,
     workspace: &DocumentWorkspace,
     status: &str,
     full_render: bool,
 ) {
     update_window_title(window, workspace.active_window_title().as_deref());
     sync_native_menu_state(workspace);
+    native_footer.sync(workspace, status);
     if full_render {
         render_workspace(webview, workspace, status);
     } else {
-        sync_workspace_state(window, webview, workspace, status);
+        sync_workspace_state(window, webview, native_footer, workspace, status);
     }
 }
 
@@ -38,10 +41,12 @@ pub(super) fn sync_native_theme_state(theme: AppTheme) {
 pub(super) fn sync_workspace_state(
     window: &Window,
     webview: &WebView,
+    native_footer: &NativeFooter,
     workspace: &DocumentWorkspace,
     status: &str,
 ) {
     update_window_title(window, workspace.active_window_title().as_deref());
+    native_footer.sync(workspace, status);
     evaluate_workspace_script(webview, "window.updateWorkspaceState", workspace, status);
 }
 

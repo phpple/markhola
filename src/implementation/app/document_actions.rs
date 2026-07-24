@@ -11,6 +11,7 @@ use crate::workspace::{DocumentWorkspace, WorkspaceOpenResult};
 
 use super::log_event;
 use super::asset_access::{AssetAccessRegistry, register_document};
+use super::native_footer::NativeFooter;
 use super::workspace_view::{present_workspace, render_status, sync_workspace_state};
 
 pub(super) fn open_documents_dialog(event_id: u64) -> Option<Vec<PathBuf>> {
@@ -41,16 +42,18 @@ pub(super) fn open_documents_dialog(event_id: u64) -> Option<Vec<PathBuf>> {
 pub(super) fn create_blank_document(
     window: &Window,
     webview: &WebView,
+    native_footer: &NativeFooter,
     workspace: &mut DocumentWorkspace,
 ) {
     let document = ActiveDocument::new_blank_with_id(workspace.next_document_id());
     workspace.open_document(document);
-    present_workspace(window, webview, workspace, "New document created.", true);
+    present_workspace(window, webview, native_footer, workspace, "New document created.", true);
 }
 
 pub(super) fn open_document(
     window: &Window,
     webview: &WebView,
+    native_footer: &NativeFooter,
     workspace: &mut DocumentWorkspace,
     path: &PathBuf,
     event_id: Option<u64>,
@@ -69,6 +72,7 @@ pub(super) fn open_document(
         sync_workspace_state(
             window,
             webview,
+            native_footer,
             workspace,
             "Document already opened. Switched to tab.",
         );
@@ -76,7 +80,16 @@ pub(super) fn open_document(
     }
 
     match load_document(workspace.next_document_id(), path) {
-        Ok(document) => open_loaded_document(window, webview, workspace, path, event_id, document, asset_access),
+        Ok(document) => open_loaded_document(
+            window,
+            webview,
+            native_footer,
+            workspace,
+            path,
+            event_id,
+            document,
+            asset_access,
+        ),
         Err(message) => {
             log_event(
                 "open_document.end",
@@ -141,6 +154,7 @@ pub(crate) fn reload_workspace_documents_from_disk(
 fn open_loaded_document(
     window: &Window,
     webview: &WebView,
+    native_footer: &NativeFooter,
     workspace: &mut DocumentWorkspace,
     path: &Path,
     event_id: Option<u64>,
@@ -160,11 +174,12 @@ fn open_loaded_document(
                 render_status(webview, &format!("Failed to enable local assets: {error}"), "error");
                 return;
             }
-            present_workspace(window, webview, workspace, "Document loaded.", true)
+            present_workspace(window, webview, native_footer, workspace, "Document loaded.", true)
         }
         WorkspaceOpenResult::ActivatedExisting(_) => sync_workspace_state(
             window,
             webview,
+            native_footer,
             workspace,
             "Document already opened. Switched to tab.",
         ),

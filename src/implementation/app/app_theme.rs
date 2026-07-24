@@ -31,4 +31,14 @@ impl AppTheme {
             AppTheme::Light => "Light",
         }
     }
+
+    pub(crate) fn from_key(value: &str) -> Option<Self> {
+        match value {
+            "default" => Some(AppTheme::Default),
+            "github" => Some(AppTheme::Github),
+            "dark" => Some(AppTheme::Dark),
+            "light" => Some(AppTheme::Light),
+            _ => None,
+        }
+    }
 }

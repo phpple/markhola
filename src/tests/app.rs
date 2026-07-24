@@ -7,7 +7,9 @@ use url::Url;
 use crate::app::AppTheme;
 use crate::workspace::DocumentWorkspace;
 
-use super::implementation::{file_paths_from_urls, load_document, reload_workspace_documents_from_disk};
+use super::implementation::{
+    file_paths_from_urls, load_document, reload_workspace_documents_from_disk,
+};
 use super::shell::{
     app_shell_html, should_dispatch_shell_recovery, should_recover_shell_on_page_load,
 };
@@ -82,6 +84,7 @@ fn app_shell_includes_find_panel_markup_and_handlers() {
     assert!(html.contains("className = \"find-match\""));
     assert!(html.contains("replaceAllWritableMatches"));
     assert!(html.contains("event.key.toLowerCase() === \"f\""));
+    assert!(!html.contains("class=\"bottom-bar\""));
 }
 
 #[test]
@@ -108,6 +111,15 @@ fn app_theme_keys_and_labels_are_stable() {
             ("light", "Light"),
         ]
     );
+}
+
+#[test]
+fn app_theme_round_trips_from_stable_key() {
+    for theme in AppTheme::ALL {
+        assert_eq!(AppTheme::from_key(theme.key()), Some(theme));
+    }
+
+    assert_eq!(AppTheme::from_key("unknown"), None);
 }
 
 #[test]

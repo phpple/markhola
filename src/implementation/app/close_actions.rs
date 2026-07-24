@@ -7,6 +7,7 @@ use crate::workspace::DocumentWorkspace;
 
 use super::PendingChangesAction;
 use super::asset_access::{AssetAccessRegistry, unregister_document};
+use super::native_footer::NativeFooter;
 use super::save_actions::save_document;
 use super::workspace_view::{render_status, sync_workspace_state};
 
@@ -34,6 +35,7 @@ pub(super) fn resolve_all_pending_changes(
 pub(super) fn close_document_tab(
     window: &Window,
     webview: &WebView,
+    native_footer: &NativeFooter,
     workspace: &mut DocumentWorkspace,
     document_id: u64,
     status: &str,
@@ -48,13 +50,14 @@ pub(super) fn close_document_tab(
     }
     workspace.close_document(document_id);
     unregister_document(asset_access, document_id);
-    sync_workspace_state(window, webview, workspace, status);
+    sync_workspace_state(window, webview, native_footer, workspace, status);
     true
 }
 
 pub(super) fn close_document_tabs(
     window: &Window,
     webview: &WebView,
+    native_footer: &NativeFooter,
     workspace: &mut DocumentWorkspace,
     document_ids: &[u64],
     status: &str,
@@ -72,7 +75,7 @@ pub(super) fn close_document_tabs(
         workspace.close_document(*document_id);
         unregister_document(asset_access, *document_id);
     }
-    sync_workspace_state(window, webview, workspace, status);
+    sync_workspace_state(window, webview, native_footer, workspace, status);
     true
 }
 

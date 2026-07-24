@@ -29,11 +29,6 @@
       const editor = document.getElementById("editor");
       const content = document.getElementById("content");
       const documentBase = document.getElementById("document-base");
-      const filePath = document.getElementById("filePath");
-      const wordCount = document.getElementById("wordCount");
-      const lineCount = document.getElementById("lineCount");
-      const modeState = document.getElementById("modeState");
-      const saveState = document.getElementById("saveState");
       const aboutOverlay = document.getElementById("aboutOverlay");
       const aboutClose = document.getElementById("aboutClose");
       const aboutVersion = document.getElementById("aboutVersion");
@@ -218,11 +213,6 @@
         document.title = "MarkHola";
         documentTitle.textContent = "Preview";
         documentSubtitle.textContent = "Use File > Open, Command+O, or drag a Markdown file into the window.";
-        filePath.textContent = "Path: No file opened";
-        wordCount.innerHTML = "<strong>Words</strong> 0";
-        lineCount.innerHTML = "<strong>Lines</strong> 0";
-        modeState.innerHTML = "<strong>Mode</strong> Readonly";
-        saveState.innerHTML = "<strong>Status</strong> Ready.";
         documentBase.setAttribute("href", "");
         showPaneForMode(null);
         window.showStatus({ message: statusMessage || "Ready.", level: "info" });
@@ -241,11 +231,6 @@
         document.title = `${active.file_name}${active.dirty ? " *" : ""} - MarkHola`;
         documentTitle.textContent = active.title;
         documentSubtitle.textContent = active.file_name;
-        filePath.textContent = `Path: ${active.file_path}`;
-        wordCount.innerHTML = `<strong>Words</strong> ${active.word_count}`;
-        lineCount.innerHTML = `<strong>Lines</strong> ${active.line_count}`;
-        modeState.innerHTML = `<strong>Mode</strong> ${active.mode_label}`;
-        saveState.innerHTML = `<strong>Status</strong> ${active.save_status}`;
         documentBase.setAttribute("href", active.base_url);
         showPaneForMode(active.mode);
         window.showStatus({ message: payload.status_message, level: active.dirty ? "warning" : "info" });

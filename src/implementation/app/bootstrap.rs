@@ -13,7 +13,9 @@ use crate::app::AppTheme;
 
 use super::runtime::AppRuntime;
 use super::asset_access::{AssetAccessRegistry, new_registry, resolve_asset};
+use super::native_footer::NativeFooter;
 use super::shell::{app_shell_html, should_dispatch_shell_recovery};
+use super::theme_preferences;
 use super::{UserEvent, WINDOW_TITLE, dispatch_user_event, log_event, macos_menu};
 
 fn is_markdown_path(value: &str) -> bool {
@@ -41,18 +43,34 @@ pub(super) fn build_runtime() -> Result<(EventLoop<UserEvent>, AppRuntime), Box<
     let proxy = event_loop.create_proxy();
     let suppress_blank_recovery = Arc::new(AtomicBool::new(true));
     let asset_access = new_registry();
+    let selected_theme = theme_preferences::load_selected_theme();
 
     let window = WindowBuilder::new()
         .with_title(WINDOW_TITLE)
         .with_inner_size(LogicalSize::new(1120.0, 760.0))
         .with_min_inner_size(LogicalSize::new(800.0, 560.0))
         .build(&event_loop)?;
-    let webview = build_webview(&window, &proxy, Arc::clone(&suppress_blank_recovery), Arc::clone(&asset_access))?;
+    let webview = build_webview(
+        &window,
+        &proxy,
+        Arc::clone(&suppress_blank_recovery),
+        Arc::clone(&asset_access),
+        selected_theme,
+    )?;
+    let native_footer = NativeFooter::install(&window, &webview);
 
     #[cfg(target_os = "macos")]
     macos_menu::install(&proxy)?;
 
-    let runtime = AppRuntime::new(proxy, window, webview, suppress_blank_recovery, asset_access);
+    let runtime = AppRuntime::new(
+        proxy,
+        window,
+        webview,
+        suppress_blank_recovery,
+        asset_access,
+        native_footer,
+        selected_theme,
+    );
     Ok((event_loop, runtime))
 }
 
@@ -61,13 +79,14 @@ fn build_webview(
     proxy: &EventLoopProxy<UserEvent>,
     suppress_blank_recovery: Arc<AtomicBool>,
     asset_access: AssetAccessRegistry,
+    selected_theme: AppTheme,
 ) -> Result<WebView, wry::Error> {
     let ipc_proxy = proxy.clone();
     let page_load_proxy = proxy.clone();
     let navigation_proxy = proxy.clone();
 
     WebViewBuilder::new()
-        .with_html(app_shell_html(AppTheme::Default))
+        .with_html(app_shell_html(selected_theme))
         .with_devtools(true)
         .with_custom_protocol("markhola-file".to_string(), move |_id, request| {
             let uri = request.uri().to_string();

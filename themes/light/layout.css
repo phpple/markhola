@@ -39,7 +39,7 @@ body {
   grid-template-rows: auto minmax(0, 1fr) auto;
   gap: 14px;
   height: 100vh;
-  padding: 0 18px 18px;
+  padding: 0 18px 8px;
   overflow: hidden;
 }
 

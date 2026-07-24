@@ -15,6 +15,7 @@ use super::navigation_actions::{
 use super::runtime::AppRuntime;
 use super::save_actions::{save_active_document, save_active_document_as};
 use super::shell_events::{handle_shell_ready, open_documentation, recover_shell};
+use super::theme_preferences;
 use super::workspace_view::{
     present_workspace, render_about, render_status, sync_native_theme_state, sync_workspace_state,
 };
@@ -27,7 +28,12 @@ pub(super) fn handle_user_event(
 ) {
     match user_event {
         UserEvent::NewDocument => {
-            create_blank_document(&runtime.window, &runtime.webview, &mut runtime.workspace);
+            create_blank_document(
+                &runtime.window,
+                &runtime.webview,
+                &runtime.native_footer,
+                &mut runtime.workspace,
+            );
         }
         UserEvent::OpenFile(ctx) => handle_open_file(ctx, runtime),
         UserEvent::OpenPath(request) => handle_open_path(request, runtime),
@@ -38,6 +44,7 @@ pub(super) fn handle_user_event(
             close_document_tab(
                 &runtime.window,
                 &runtime.webview,
+                &runtime.native_footer,
                 &mut runtime.workspace,
                 document_id,
                 "Document closed.",
@@ -51,10 +58,22 @@ pub(super) fn handle_user_event(
         UserEvent::RecoverShell(url) => recover_shell(url, runtime),
         UserEvent::OpenExternal(href) => open_external_link(&href, runtime),
         UserEvent::SaveDocument => {
-            save_active_document(&runtime.window, &runtime.webview, &mut runtime.workspace, &runtime.asset_access);
+            save_active_document(
+                &runtime.window,
+                &runtime.webview,
+                &runtime.native_footer,
+                &mut runtime.workspace,
+                &runtime.asset_access,
+            );
         }
         UserEvent::SaveDocumentAs => {
-            save_active_document_as(&runtime.window, &runtime.webview, &mut runtime.workspace, &runtime.asset_access);
+            save_active_document_as(
+                &runtime.window,
+                &runtime.webview,
+                &runtime.native_footer,
+                &mut runtime.workspace,
+                &runtime.asset_access,
+            );
         }
         UserEvent::ExportPdf => export_actions::export_pdf(&runtime.webview, &runtime.workspace),
         UserEvent::ExportHtml => export_actions::export_html(&runtime.webview, &runtime.workspace),
@@ -89,6 +108,7 @@ fn handle_open_file(ctx: super::ActionContext, runtime: &mut AppRuntime) {
                 open_document(
                     &runtime.window,
                     &runtime.webview,
+                    &runtime.native_footer,
                     &mut runtime.workspace,
                     &path,
                     Some(ctx.event_id),
@@ -125,6 +145,7 @@ fn handle_open_path(request: OpenPathRequest, runtime: &mut AppRuntime) {
     open_document(
         &runtime.window,
         &runtime.webview,
+        &runtime.native_footer,
         &mut runtime.workspace,
         &path,
         Some(ctx.event_id),
@@ -144,6 +165,7 @@ fn toggle_mode(runtime: &mut AppRuntime) {
         Some(status) => present_workspace(
             &runtime.window,
             &runtime.webview,
+            &runtime.native_footer,
             &runtime.workspace,
             status,
             true,
@@ -154,6 +176,7 @@ fn toggle_mode(runtime: &mut AppRuntime) {
 
 fn select_theme(theme: AppTheme, runtime: &mut AppRuntime) {
     runtime.selected_theme = theme;
+    theme_preferences::save_selected_theme(theme);
     sync_native_theme_state(theme);
     let css = render_assets::load_app_theme_css_for_inline_style(theme.key());
     match serde_json::to_string(&css) {
@@ -202,6 +225,7 @@ fn editor_changed(markdown: String, runtime: &mut AppRuntime) {
         sync_workspace_state(
             &runtime.window,
             &runtime.webview,
+            &runtime.native_footer,
             &runtime.workspace,
             "Unsaved changes.",
         );

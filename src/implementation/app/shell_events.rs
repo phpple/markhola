@@ -18,6 +18,7 @@ pub(super) fn handle_shell_ready(runtime: &mut AppRuntime) {
         present_workspace(
             &runtime.window,
             &runtime.webview,
+            &runtime.native_footer,
             &runtime.workspace,
             &status,
             true,
@@ -69,6 +70,7 @@ pub(super) fn open_documentation(runtime: &mut AppRuntime) {
         Some(path) => open_document(
             &runtime.window,
             &runtime.webview,
+            &runtime.native_footer,
             &mut runtime.workspace,
             &path,
             None,

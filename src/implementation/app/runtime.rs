@@ -11,6 +11,7 @@ use crate::workspace::DocumentWorkspace;
 
 use super::{OpenPathRequest, UserEvent};
 use super::asset_access::AssetAccessRegistry;
+use super::native_footer::NativeFooter;
 
 pub(super) struct ShellRuntime {
     pub(super) ready: bool,
@@ -39,6 +40,7 @@ pub(super) struct AppRuntime {
     pub(super) shell: ShellRuntime,
     pub(super) asset_access: AssetAccessRegistry,
     pub(super) selected_theme: AppTheme,
+    pub(super) native_footer: NativeFooter,
 }
 
 impl AppRuntime {
@@ -48,6 +50,8 @@ impl AppRuntime {
         webview: WebView,
         suppress_blank_recovery: Arc<AtomicBool>,
         asset_access: AssetAccessRegistry,
+        native_footer: NativeFooter,
+        selected_theme: AppTheme,
     ) -> Self {
         Self {
             proxy,
@@ -57,7 +61,8 @@ impl AppRuntime {
             modifiers: ModifiersState::default(),
             shell: ShellRuntime::new(suppress_blank_recovery),
             asset_access,
-            selected_theme: AppTheme::Default,
+            selected_theme,
+            native_footer,
         }
     }
 }

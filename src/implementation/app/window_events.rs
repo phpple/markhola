@@ -48,6 +48,11 @@ pub(super) fn handle_window_event(
                 UserEvent::OpenPath(super::OpenPathRequest { ctx, path }),
             );
         }
+        WindowEvent::Resized(_) => {
+            runtime
+                .native_footer
+                .relayout(&runtime.window, &runtime.webview);
+        }
         _ => {}
     }
 }

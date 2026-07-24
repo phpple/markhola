@@ -8,8 +8,9 @@ use crate::document::ActiveDocument;
 use crate::file_io;
 use crate::workspace::DocumentWorkspace;
 
-use super::workspace_view::{render_status, sync_workspace_state};
 use super::asset_access::{AssetAccessRegistry, register_document};
+use super::native_footer::NativeFooter;
+use super::workspace_view::{render_status, sync_workspace_state};
 
 pub(super) fn save_document(document: &mut ActiveDocument) -> Result<(), String> {
     if document.is_draft() {
@@ -23,6 +24,7 @@ pub(super) fn save_document(document: &mut ActiveDocument) -> Result<(), String>
 pub(super) fn save_active_document(
     window: &Window,
     webview: &WebView,
+    native_footer: &NativeFooter,
     workspace: &mut DocumentWorkspace,
     asset_access: &AssetAccessRegistry,
 ) -> bool {
@@ -31,7 +33,7 @@ pub(super) fn save_active_document(
         .map(ActiveDocument::is_draft)
         .unwrap_or(false)
     {
-        return save_active_document_as(window, webview, workspace, asset_access);
+        return save_active_document_as(window, webview, native_footer, workspace, asset_access);
     }
 
     let Some(document) = workspace.active_document_mut() else {
@@ -42,13 +44,14 @@ pub(super) fn save_active_document(
         render_status(webview, &message, "error");
         return false;
     }
-    sync_workspace_state(window, webview, workspace, "Saved.");
+    sync_workspace_state(window, webview, native_footer, workspace, "Saved.");
     true
 }
 
 pub(super) fn save_active_document_as(
     window: &Window,
     webview: &WebView,
+    native_footer: &NativeFooter,
     workspace: &mut DocumentWorkspace,
     asset_access: &AssetAccessRegistry,
 ) -> bool {
@@ -94,7 +97,13 @@ pub(super) fn save_active_document_as(
         return false;
     };
     document.replace_file_path(path, base_url);
-    sync_workspace_state(window, webview, workspace, "Saved to new path.");
+    sync_workspace_state(
+        window,
+        webview,
+        native_footer,
+        workspace,
+        "Saved to new path.",
+    );
     true
 }
 

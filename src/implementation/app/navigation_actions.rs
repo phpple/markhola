@@ -9,6 +9,7 @@ pub(super) fn activate_document(document_id: u64, runtime: &mut AppRuntime) {
         sync_workspace_state(
             &runtime.window,
             &runtime.webview,
+            &runtime.native_footer,
             &runtime.workspace,
             "Document switched.",
         );
@@ -32,6 +33,7 @@ pub(super) fn switch_document(runtime: &mut AppRuntime, next: bool) {
         sync_workspace_state(
             &runtime.window,
             &runtime.webview,
+            &runtime.native_footer,
             &runtime.workspace,
             message,
         );
@@ -43,6 +45,7 @@ pub(super) fn close_current_document(runtime: &mut AppRuntime, control_flow: &mu
         close_document_tab(
             &runtime.window,
             &runtime.webview,
+            &runtime.native_footer,
             &mut runtime.workspace,
             document_id,
             "Document closed.",
@@ -62,10 +65,11 @@ pub(super) fn close_other_documents(runtime: &mut AppRuntime) {
             close_document_tabs(
                 &runtime.window,
                 &runtime.webview,
+                &runtime.native_footer,
                 &mut runtime.workspace,
                 &document_ids,
-            "Other tabs closed.",
-            &runtime.asset_access,
+                "Other tabs closed.",
+                &runtime.asset_access,
             );
         }
     } else {
@@ -81,6 +85,7 @@ pub(super) fn close_all_documents(runtime: &mut AppRuntime) {
         close_document_tabs(
             &runtime.window,
             &runtime.webview,
+            &runtime.native_footer,
             &mut runtime.workspace,
             &document_ids,
             "All tabs closed.",
