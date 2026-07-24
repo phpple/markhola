@@ -1,6 +1,7 @@
 use tao::window::Window;
 use wry::WebView;
 
+use crate::app::AppTheme;
 use crate::workspace::DocumentWorkspace;
 
 #[cfg(target_os = "macos")]
@@ -14,7 +15,9 @@ use objc2::runtime::AnyObject;
 #[cfg(target_os = "macos")]
 use objc2::msg_send;
 #[cfg(target_os = "macos")]
-use objc2_app_kit::{NSAutoresizingMaskOptions, NSColor, NSFont, NSTextField, NSView, NSWindow};
+use objc2_app_kit::{
+    NSAutoresizingMaskOptions, NSBox, NSBoxType, NSColor, NSFont, NSTextField, NSWindow,
+};
 #[cfg(target_os = "macos")]
 use objc2_foundation::{NSPoint, NSRect, NSSize, NSString};
 #[cfg(target_os = "macos")]
@@ -39,7 +42,7 @@ pub(super) struct NativeFooter {
 
 #[cfg(target_os = "macos")]
 struct NativeFooterHandle {
-    footer_view: Retained<NSView>,
+    footer_view: Retained<NSBox>,
     path_field: Retained<NSTextField>,
     words_field: Retained<NSTextField>,
     lines_field: Retained<NSTextField>,
@@ -48,7 +51,7 @@ struct NativeFooterHandle {
 }
 
 impl NativeFooter {
-    pub(super) fn install(window: &Window, webview: &WebView) -> Self {
+    pub(super) fn install(window: &Window, webview: &WebView, theme: AppTheme) -> Self {
         #[cfg(target_os = "macos")]
         unsafe {
             let Some(mtm) = MainThreadMarker::new() else {
@@ -59,10 +62,12 @@ impl NativeFooter {
                 return Self { handle: None };
             };
 
-            let footer_view = NSView::initWithFrame(
-                NSView::alloc(mtm),
+            let footer_view = NSBox::initWithFrame(
+                NSBox::alloc(mtm),
                 NSRect::new(NSPoint::new(0.0, 0.0), NSSize::new(100.0, FOOTER_HEIGHT)),
             );
+            footer_view.setBoxType(NSBoxType::Custom);
+            footer_view.setBorderWidth(0.0);
             footer_view.setAutoresizingMask(
                 NSAutoresizingMaskOptions::ViewWidthSizable
                     | NSAutoresizingMaskOptions::ViewMaxYMargin,
@@ -74,13 +79,6 @@ impl NativeFooter {
             let mode_field = footer_label(mtm, "");
             let status_field = footer_label(mtm, "");
 
-            apply_footer_text_colors(
-                &path_field,
-                &words_field,
-                &lines_field,
-                &mode_field,
-                &status_field,
-            );
             apply_footer_fonts(
                 &path_field,
                 &words_field,
@@ -108,14 +106,36 @@ impl NativeFooter {
             let footer = Self {
                 handle: Some(handle),
             };
+            footer.set_theme(theme);
             footer.relayout(window, webview);
             footer
         }
 
         #[cfg(not(target_os = "macos"))]
         {
-            let _ = (window, webview);
+            let _ = (window, webview, theme);
             Self {}
+        }
+    }
+
+    pub(super) fn set_theme(&self, theme: AppTheme) {
+        #[cfg(target_os = "macos")]
+        {
+            let Some(handle) = &self.handle else {
+                return;
+            };
+            let (background, primary, secondary) = footer_theme_colors(theme);
+            handle.footer_view.setFillColor(&background);
+            handle.path_field.setTextColor(Some(&secondary));
+            handle.words_field.setTextColor(Some(&primary));
+            handle.lines_field.setTextColor(Some(&primary));
+            handle.mode_field.setTextColor(Some(&primary));
+            handle.status_field.setTextColor(Some(&primary));
+        }
+
+        #[cfg(not(target_os = "macos"))]
+        {
+            let _ = theme;
         }
     }
 
@@ -225,20 +245,41 @@ unsafe fn footer_label(mtm: MainThreadMarker, value: &str) -> Retained<NSTextFie
 }
 
 #[cfg(target_os = "macos")]
-unsafe fn apply_footer_text_colors(
-    path_field: &NSTextField,
-    words_field: &NSTextField,
-    lines_field: &NSTextField,
-    mode_field: &NSTextField,
-    status_field: &NSTextField,
-) {
-    let primary = NSColor::labelColor();
-    let secondary = NSColor::secondaryLabelColor();
-    path_field.setTextColor(Some(&secondary));
-    words_field.setTextColor(Some(&primary));
-    lines_field.setTextColor(Some(&primary));
-    mode_field.setTextColor(Some(&primary));
-    status_field.setTextColor(Some(&primary));
+fn footer_theme_colors(
+    theme: AppTheme,
+) -> (Retained<NSColor>, Retained<NSColor>, Retained<NSColor>) {
+    match theme {
+        AppTheme::Default => (
+            rgb_color(255, 255, 255),
+            rgb_color(43, 36, 29),
+            rgb_color(111, 98, 88),
+        ),
+        AppTheme::Github => (
+            rgb_color(246, 248, 250),
+            rgb_color(31, 35, 40),
+            rgb_color(87, 96, 106),
+        ),
+        AppTheme::Dark => (
+            rgb_color(13, 17, 23),
+            rgb_color(230, 237, 243),
+            rgb_color(139, 148, 158),
+        ),
+        AppTheme::Light => (
+            rgb_color(238, 243, 248),
+            rgb_color(32, 48, 65),
+            rgb_color(93, 114, 136),
+        ),
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn rgb_color(red: u8, green: u8, blue: u8) -> Retained<NSColor> {
+    NSColor::colorWithSRGBRed_green_blue_alpha(
+        f64::from(red) / 255.0,
+        f64::from(green) / 255.0,
+        f64::from(blue) / 255.0,
+        1.0,
+    )
 }
 
 #[cfg(target_os = "macos")]

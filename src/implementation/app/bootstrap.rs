@@ -57,7 +57,7 @@ pub(super) fn build_runtime() -> Result<(EventLoop<UserEvent>, AppRuntime), Box<
         Arc::clone(&asset_access),
         selected_theme,
     )?;
-    let native_footer = NativeFooter::install(&window, &webview);
+    let native_footer = NativeFooter::install(&window, &webview, selected_theme);
 
     #[cfg(target_os = "macos")]
     macos_menu::install(&proxy)?;
@@ -71,6 +71,7 @@ pub(super) fn build_runtime() -> Result<(EventLoop<UserEvent>, AppRuntime), Box<
         native_footer,
         selected_theme,
     );
+    runtime.native_footer.sync(&runtime.workspace, "Ready.");
     Ok((event_loop, runtime))
 }
 

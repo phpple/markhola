@@ -177,6 +177,7 @@ fn toggle_mode(runtime: &mut AppRuntime) {
 fn select_theme(theme: AppTheme, runtime: &mut AppRuntime) {
     runtime.selected_theme = theme;
     theme_preferences::save_selected_theme(theme);
+    runtime.native_footer.set_theme(theme);
     sync_native_theme_state(theme);
     let css = render_assets::load_app_theme_css_for_inline_style(theme.key());
     match serde_json::to_string(&css) {
