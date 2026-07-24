@@ -6,3 +6,4 @@ tech-notes/
 .DS_Store
 *.lock
 tmp/
+.idea/
